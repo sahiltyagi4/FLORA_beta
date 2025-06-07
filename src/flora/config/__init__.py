@@ -12,23 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from abc import ABC, abstractmethod
 
-
-class FLAlgorithm(ABC):
-    """Base class for Federated Learning algorithms"""
-
-    @abstractmethod
-    def broadcast_model(self, model):
-        """Broadcast the model to all clients"""
-        pass
-
-    @abstractmethod
-    def train_loop(self):
-        """Run the training loop for the algorithm"""
-        pass
-
-    @abstractmethod
-    def train(self):
-        """Train the model using the federated learning algorithm"""
-        pass

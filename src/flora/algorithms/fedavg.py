@@ -14,21 +14,24 @@
 
 import torch
 
+from . import FLAlgorithm
 from src.flora.communicator import Communicator
 from src.flora.helper.node_config import NodeConfig
-from src.flora.helper.training_params import FedAvgTrainingParameters
 
 
-class FederatedAveraging:
+class FederatedAveraging(FLAlgorithm):
     """Implementation of Federated Averaging"""
 
     def __init__(
         self,
         model: torch.nn.Module,
+        optimizer: torch.optim.Optimizer,
+        criterion: torch.nn.Module,
         train_data: torch.utils.data.DataLoader,
         communicator: Communicator,
         total_clients: int,
-        train_params: FedAvgTrainingParameters,
+        comm_freq: int,
+        epochs: int,
     ):
         """
         :param model: model to train
@@ -41,11 +44,10 @@ class FederatedAveraging:
         self.train_data = train_data
         self.communicator = communicator
         self.total_clients = total_clients
-        self.train_params = train_params
-        self.optimizer = self.train_params.get_optimizer()
-        self.comm_freq = self.train_params.get_comm_freq()
-        self.loss = self.train_params.get_loss()
-        self.epochs = self.train_params.get_epochs()
+        self.optimizer = optimizer
+        self.comm_freq = comm_freq
+        self.loss = criterion
+        self.epochs = epochs
         self.local_step = 0
         self.training_samples = 0
 
