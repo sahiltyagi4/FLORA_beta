@@ -1,0 +1,77 @@
+// Copyright (c) 2025, Oak Ridge National Laboratory.  All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package src.flora.communicator;
+
+// Service definition for central aggregation server
+service CentralServer {
+    // send updates to server
+    rpc SendUpdate(ModelUpdate) returns (UpdateResponse);
+
+    // Get updated model from server
+    rpc GetUpdatedModel(GetModelRequest) returns (ModelParameters);
+
+    // Register client with server
+    rpc RegisterClient(ClientInfo) returns (RegistrationResponse);
+}
+
+// Model update from client sending either parameters or gradients and number of training samples processed
+message ModelUpdate {
+    string client_id = 1;
+    int32 round_number = 2;
+    repeated LayerState layers = 3;
+    int32 number_samples = 4;
+}
+
+// Model state (params or grads) on a layer-wise basis
+message LayerState {
+    string layer_name = 1;
+    repeated float param_update = 2;
+    repeated int32 param_shape = 3;
+}
+
+// Complete model parameters
+message ModelParameters {
+    int32 round_number = 1;
+    repeated LayerState layers = 2;
+    bool is_ready = 3;
+}
+
+// Response after sending update
+message UpdateResponse {
+    bool success = 1;
+    string message = 2;
+    int32 clients_registered = 3;
+    int32 updates_received = 4;
+}
+
+// Request for getting averaged model
+message GetModelRequest {
+    string client_id = 1;
+    int32 round_number = 2;
+}
+
+// Client registration info
+message ClientInfo {
+    string client_id = 1;
+}
+
+// Registration response
+message RegistrationResponse {
+    bool success = 1;
+    string message = 2;
+    int32 total_clients = 3;
+}
