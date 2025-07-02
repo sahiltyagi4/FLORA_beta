@@ -25,7 +25,7 @@ from .BaseCommunicator import Communicator
 
 
 @rich.repr.auto
-class DummyCommunicator(Communicator):
+class Dummy(Communicator):
     """
     Mock communicator for development with no-ops.
     """

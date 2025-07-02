@@ -66,14 +66,16 @@ class Communicator(ABC):
         msg: MsgT,
         communicate_params: bool = True,
         compute_mean: bool = True,
+        **kwargs,
     ) -> MsgT:
         """
         Aggregate an object (model or tensor) across nodes.
 
         Args:
             obj: The object to aggregate (model or tensor)
-            mean: Whether to compute the mean (default is True)
-            num_samples: Optional number of samples for weighted aggregation
+            communicate_params: Whether to communicate parameters (True) or gradients (False)
+            compute_mean: Whether to compute the mean (default is True)
+            **kwargs: Additional protocol-specific arguments (e.g., batch_samples for weighted aggregation)
         Returns:
             The aggregated object
         """

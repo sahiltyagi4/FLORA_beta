@@ -18,22 +18,30 @@ from typing import Dict
 import torch
 import numpy as np
 
-import src.flora.communicator.grpc_communicator_pb2 as flora_grpc_pb2
-import src.flora.communicator.grpc_communicator_pb2_grpc as flora_grpc_pb2_grpc
+import src.flora.communicator.gRPC_pb2 as flora_grpc_pb2
+import src.flora.communicator.gRPC_pb2_grpc as flora_grpc_pb2_grpc
 
 
 class GrpcClient:
-    def __init__(self, client_id: str, master_addr: str ="127.0.0.1", master_port: int =50051):
+    def __init__(
+        self, client_id: str, master_addr: str = "127.0.0.1", master_port: int = 50051
+    ):
         self.client_id = client_id
         # self.channel = grpc.insecure_channel(master_addr+':'+str(master_port))
         # 100MB
-        self.channel = grpc.insecure_channel(master_addr+':'+str(master_port), options=[
-            ('grpc.max_receive_message_length', 100 * 1024 * 1024),
-            ('grpc.max_send_message_length', 100 * 1024 * 1024),])
+        self.channel = grpc.insecure_channel(
+            master_addr + ":" + str(master_port),
+            options=[
+                ("grpc.max_receive_message_length", 100 * 1024 * 1024),
+                ("grpc.max_send_message_length", 100 * 1024 * 1024),
+            ],
+        )
         self.stub = flora_grpc_pb2_grpc.CentralServerStub(self.channel)
         self.round_number = 0
 
-        print(f"Client {client_id} initialized, connecting to {master_addr}:{master_port}")
+        print(
+            f"Client {client_id} initialized, connecting to {master_addr}:{master_port}"
+        )
         self._register_with_server()
 
     def _register_with_server(self):
@@ -55,7 +63,7 @@ class GrpcClient:
     def _model_params_to_protobuf(self, updates: Dict):
         """Convert model parameters to protobuf format"""
         proto_layers = []
-        for (name, tnsr) in updates.items():
+        for name, tnsr in updates.items():
             tnsr = tnsr.cpu()
             layer_proto = flora_grpc_pb2.LayerState(layer_name=name)
             layer_proto.param_update.extend(tnsr.flatten().tolist())
@@ -101,11 +109,19 @@ class GrpcClient:
                 layer_name = layer.layer_name
                 if name == layer_name:
                     if communicate_params:
-                        param.data = torch.tensor(np.array(layer.param_update).reshape(tuple(layer.param_shape)),
-                                                  dtype=torch.float32,)
+                        param.data = torch.tensor(
+                            np.array(layer.param_update).reshape(
+                                tuple(layer.param_shape)
+                            ),
+                            dtype=torch.float32,
+                        )
                     else:
-                        param.grad = torch.tensor(np.array(layer.param_update).reshape(tuple(layer.param_shape)),
-                                                  dtype=torch.float32,)
+                        param.grad = torch.tensor(
+                            np.array(layer.param_update).reshape(
+                                tuple(layer.param_shape)
+                            ),
+                            dtype=torch.float32,
+                        )
 
         return model
 
@@ -114,12 +130,17 @@ class GrpcClient:
         print(f"Round {self.round_number}: Waiting for averaged model from server...")
         while True:
             try:
-                request = flora_grpc_pb2.GetModelRequest(client_id=self.client_id, round_number=self.round_number)
+                request = flora_grpc_pb2.GetModelRequest(
+                    client_id=self.client_id, round_number=self.round_number
+                )
                 response = self.stub.GetUpdatedModel(request)
 
                 if response.is_ready:
-                    msg = self._update_model_from_protobuf(communicate_params=communicate_params,
-                                                           model=msg, proto_layers=response.layers)
+                    msg = self._update_model_from_protobuf(
+                        communicate_params=communicate_params,
+                        model=msg,
+                        proto_layers=response.layers,
+                    )
                     print(
                         f"Round {self.round_number}: Received averaged model from server"
                     )

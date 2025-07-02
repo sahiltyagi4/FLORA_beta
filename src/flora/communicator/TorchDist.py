@@ -25,7 +25,7 @@ from .BaseCommunicator import Communicator
 # ======================================================================================
 
 
-class TorchDistCommunicator(Communicator):
+class TorchDist(Communicator):
     """
     PyTorch distributed communicator
     """
@@ -42,6 +42,7 @@ class TorchDistCommunicator(Communicator):
         sharedfile: str = "sharedfile",
         timeout: int = 10,
         max_retries: int = 3,
+        **kwargs,
     ):
         print(f"{self.__class__.__name__} init...")
         self.rank: int = rank
@@ -160,6 +161,7 @@ class TorchDistCommunicator(Communicator):
         msg: Communicator.MsgT,
         communicate_params: bool = True,
         compute_mean: bool = True,
+        **kwargs,
     ) -> Communicator.MsgT:
         """
         :param msg: message to aggregate

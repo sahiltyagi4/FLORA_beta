@@ -13,5 +13,6 @@
 # limitations under the License.
 
 from .BaseCommunicator import Communicator
-from .DummyCommunicator import DummyCommunicator
-from .TorchDistCommunicator import TorchDistCommunicator
+from .Dummy import Dummy
+from .TorchDist import TorchDist
+from .gRPC import gRPC
