@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import grpc
 from typing import Dict
 
-import torch
+import grpc
 import numpy as np
+import torch
 
 from . import grpc_communicator_pb2 as flora_grpc_pb2
 from . import grpc_communicator_pb2_grpc as flora_grpc_pb2_grpc

@@ -13,38 +13,48 @@
 # limitations under the License.
 
 import time
-import grpc
 from concurrent import futures
-from typing import Union
+from typing import Optional, Union
 
-import torch.nn
+import grpc
+import torch
+from torch import nn
 
-from . import Communicator
-from . import grpc_communicator_pb2_grpc as flora_grpc_pb2_grpc
-from .grpc_server import CentralServerServicer
+from . import Communicator, grpc_communicator_pb2_grpc
 from .grpc_client import GrpcClient
+from .grpc_server import CentralServerServicer
 
 
 class GrpcCommunicator(Communicator):
     def __init__(
         self,
-        model: torch.nn.Module,
-        id: int = 0,
-        total_clients: int = 1,
+        model: nn.Module,
+        local_rank: int,
+        world_size: int,
         master_addr: str = "127.0.0.1",
         master_port: int = 50051,
         accumulate_updates: bool = True,
+        **kwargs,
     ):
-        super().__init__(protocol_type="RPC")
-        self.id = id
-        # total clients excluding parameter server
-        self.total_clients = total_clients - 1
-        self.master_port = master_port
-        self.accumulate_updates = accumulate_updates
+        print(f"{self.__class__.__name__} init...")
 
-        # id 0 corresponds to central server...later change this to local_id for central server nodes
-        # to enable dual communication protocols
-        if self.id == 0:
+        self.model: nn.Module = model
+
+        self.local_rank: int = local_rank
+        self.world_size: int = world_size
+
+        self.master_addr: str = master_addr
+        self.master_port: int = master_port
+
+        self.accumulate_updates: bool = accumulate_updates
+
+        self.server: Optional[grpc.Server] = None
+        self.client: Optional[GrpcClient] = None
+
+    def setup(self):
+        """Initialize the gRPC communicator."""
+        print(f"{self.__class__.__name__} setup...")
+        if self.local_rank == 0:
             # grpc send and receive message length max 100MB
             self.server = grpc.server(
                 futures.ThreadPoolExecutor(max_workers=10),
@@ -54,19 +64,17 @@ class GrpcCommunicator(Communicator):
                 ],
             )
 
-            flora_grpc_pb2_grpc.add_CentralServerServicer_to_server(
+            # Add the server servicer with the model
+            grpc_communicator_pb2_grpc.add_CentralServerServicer_to_server(
                 CentralServerServicer(
-                    self.total_clients,
-                    model,
+                    self.world_size,
+                    self.model,
                     accumulate_updates=self.accumulate_updates,
                 ),
                 self.server,
             )
 
-            listen_addr = f"[::]:{self.master_port}"
-            self.server.add_insecure_port(listen_addr)
-
-            print(f"Compatible Scalable Parameter server starting on {listen_addr}")
+            self.server.add_insecure_port(f"[::]:{self.master_port}")
             self.server.start()
 
             try:
@@ -76,13 +84,25 @@ class GrpcCommunicator(Communicator):
                 print("Shutting down parameter server...")
                 self.server.stop(0)
 
-        else:
-            client_id = "client_" + str(self.id)
-            self.client = GrpcClient(
-                client_id=client_id,
-                master_addr=master_addr,
-                master_port=self.master_port,
-            )
+            return
+
+        self.client = GrpcClient(
+            client_id="client_" + str(self.local_rank),
+            master_addr=self.master_addr,
+            master_port=self.master_port,
+        )
+
+    def broadcast(
+        self,
+        msg: Communicator.MsgT,
+        src: int = 0,
+    ) -> Communicator.MsgT:
+        """
+        In gRPC centralized topology, this is handled by the aggregation round.
+        Clients receive models via get_averaged_model in aggregate().
+        """
+        print(f"gRPC broadcast from src={src} | {type(msg)}")
+        raise NotImplementedError()
 
     def aggregate(
         self,
@@ -91,6 +111,8 @@ class GrpcCommunicator(Communicator):
         communicate_params: bool = True,
         compute_mean: bool = True,
     ):
+        # TODO: fix linting errors caused by function signature mismatch with base class
+
         if isinstance(msg, torch.nn.Module):
             # communicate either model parameters or gradients
             if communicate_params:
@@ -106,18 +128,59 @@ class GrpcCommunicator(Communicator):
                     for (name, param) in msg.named_parameters()
                 }
 
-            if self.id != 0:
-                self.client.send_update_to_server(
-                    updates=updates, batch_samples=batch_samples
+            # if self.local_rank != 0:
+            if self.client is None:
+                raise RuntimeError(
+                    "gRPC client is not initialized. Call setup() first."
                 )
-                msg = self.client.get_averaged_model(
-                    msg=msg, communicate_params=communicate_params
-                )
-                self.client.round_number += 1
+
+            self.client.send_update_to_server(
+                updates=updates, batch_samples=batch_samples
+            )
+            msg = self.client.get_averaged_model(
+                msg=msg, communicate_params=communicate_params
+            )
+            self.client.round_number += 1
 
         else:
             raise NotImplementedError(
-                "handle other types than torch.nn.Module for aggregation in gRPC!!!"
+                "TODO: Handle other types than torch.nn.Module for aggregation in gRPC!!!"
             )
 
         return msg
+
+    def send(
+        self,
+        msg: Communicator.MsgT,
+        dst: int,
+        communicate_params: bool = True,
+    ) -> Communicator.MsgT:
+        print(f"gRPC send to dst={dst} | {type(msg)}")
+        raise NotImplementedError()
+
+    def receive(
+        self,
+        msg: Communicator.MsgT,
+        src: int,
+        communicate_params: bool = True,
+    ) -> Communicator.MsgT:
+        print(f"gRPC receive from src={src} | {type(msg)}")
+        raise NotImplementedError()
+
+    def collect(
+        self,
+        msg: Union[nn.Module, torch.Tensor, float, int],
+        communicate_params: bool = True,
+    ) -> list:
+        print(f"gRPC collect | {type(msg)}")
+        raise NotImplementedError()
+
+    def close(self):
+        """
+        Clean up gRPC resources.
+        """
+        print("Closing gRPC communicator")
+
+        # TODO: implement this
+
+        print("gRPC communicator closed")
