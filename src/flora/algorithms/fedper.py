@@ -123,10 +123,18 @@ class FedPer:
                         continue
                     param.data *= weight_scaling
 
-                self.global_model = self.communicator.aggregate(
+                # Aggregate base model parameters across clients
+                aggregated_base_model = self.communicator.aggregate(
                     msg=self.model.base_model,
                     compute_mean=False,
                 )
+                # Wrap it back into FedPerModel along with current client's personal head
+                self.global_model = FedPerWrapper(
+                    base_model=aggregated_base_model,
+                    personal_head=self.model.personal_head,
+                )
+                self.global_model = self.global_model.to(self.device)
+
                 self.model.base_model.load_state_dict(
                     self.global_model.base_model.state_dict()
                 )
