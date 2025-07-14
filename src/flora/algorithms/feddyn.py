@@ -138,31 +138,39 @@ class FedDynNew(Algorithm):
     FedDyn introduces a dynamic regularization term to address objective inconsistency in federated learning and improve convergence in heterogeneous environments.
     """
 
-    def __init__(
-        self,
-        local_model: nn.Module,
-        comm: Communicator,
-        max_epochs: int,
-        lr: float = 0.01,
-        alpha: float = 0.1,
-    ):
-        super().__init__(local_model, comm, max_epochs)
-        self.lr = lr
+    def __init__(self, alpha: float = 0.1, **kwargs):
+        """Initialize FedDyn algorithm with regularization parameter and granularity validation."""
+        super().__init__(**kwargs)
         self.alpha = alpha
 
-        # ---
+        # FedDyn works best at ROUND level for optimal dynamic regularization mathematics
+        if self.agg_level != "ROUND":
+            import warnings
+
+            warnings.warn(
+                f"FedDyn designed for agg_level='ROUND' but got '{self.agg_level}'. "
+                f"EPOCH/ITER levels may work but could affect regularization convergence.",
+                UserWarning,
+            )
+
+    def _setup(self) -> None:
+        """
+        FedDyn-specific setup: initialize server momentum.
+        """
+        super()._setup()
+
         self.server_momentum: Dict[str, torch.Tensor] = {}
-        for name, param in local_model.named_parameters():
+        for name, param in self.local_model.named_parameters():
             if param.requires_grad:
                 self.server_momentum[name] = torch.zeros_like(param.data)
 
-    def configure_optimizer(self) -> torch.optim.Optimizer:
+    def _configure_local_optimizer(self, local_lr: float) -> torch.optim.Optimizer:
         """
         SGD optimizer for local updates.
         """
-        return torch.optim.SGD(self.local_model.parameters(), lr=self.lr)
+        return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def train_step(self, batch: Any, batch_idx: int) -> Tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
         """
         Perform a forward pass and compute the FedDyn loss for a single batch.
         """
@@ -192,19 +200,13 @@ class FedDynNew(Algorithm):
         total_loss = base_loss + regularization_loss
         return total_loss, inputs.size(0)
 
-    def round_start(self, round_idx: int) -> None:
+    def _aggregate(self) -> None:
         """
-        Synchronize the local model with the global model at the start of each round.
-        """
-        # Receive global model via broadcast from rank 0 (aggregator)
-        self.local_model = self.comm.broadcast(
-            self.local_model,
-            src=0,
-        )
+        FedDyn aggregation: weighted averaging with dynamic regularization momentum.
 
-    def round_end(self, round_idx: int) -> None:
-        """
-        Aggregate model parameters across clients and update the local model and server momentum.
+        NOTE: Works best at ROUND level but may be compatible with other granularities
+        - Dynamic regularization mathematics designed for complete training cycles
+        - EPOCH/ITER levels may work but could affect regularization convergence
         """
 
         # Store local model before aggregation for momentum update
@@ -215,7 +217,7 @@ class FedDynNew(Algorithm):
 
         # Aggregate local sample counts to compute federation total
         global_samples = self.comm.aggregate(
-            torch.tensor([self.local_samples], dtype=torch.float32),
+            torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
 
@@ -224,7 +226,7 @@ class FedDynNew(Algorithm):
             data_proportion = 0.0
         else:
             # Calculate data proportion for weighted aggregation
-            data_proportion = self.local_samples / global_samples
+            data_proportion = self.local_sample_count / global_samples
 
         # All nodes participate regardless of sample count
         utils.scale_params(self.local_model, data_proportion)

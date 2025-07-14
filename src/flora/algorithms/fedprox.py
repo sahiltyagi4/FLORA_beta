@@ -115,28 +115,26 @@ class FedProxNew(Algorithm):
     The proximal term penalizes deviation from the global model during local updates.
     """
 
-    def __init__(
-        self,
-        local_model: nn.Module,
-        comm: Communicator,
-        max_epochs: int,
-        lr: float = 0.01,
-        mu: float = 0.01,
-    ):
-        super().__init__(local_model, comm, max_epochs)
-        self.lr = lr
+    def __init__(self, mu: float = 0.01, **kwargs):
+        """Initialize FedProx algorithm with proximal term parameter."""
+        super().__init__(**kwargs)
         self.mu = mu
 
-        # ---
-        self.global_model = copy.deepcopy(local_model)
+    def _setup(self) -> None:
+        """
+        FedProx-specific setup: initialize global model for proximal term.
+        """
+        super()._setup()
 
-    def configure_optimizer(self) -> torch.optim.Optimizer:
+        self.global_model = copy.deepcopy(self.local_model)
+
+    def _configure_local_optimizer(self, local_lr: float) -> torch.optim.Optimizer:
         """
         SGD optimizer for local updates.
         """
-        return torch.optim.SGD(self.local_model.parameters(), lr=self.lr)
+        return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
         """
         Forward pass and compute the FedProx loss for a single batch.
         """
@@ -154,25 +152,25 @@ class FedProxNew(Algorithm):
         loss += (self.mu / 2) * prox_term
         return loss, inputs.size(0)
 
-    def round_start(self, round_idx: int) -> None:
+    def _round_start(self, round_idx: int) -> None:
         """
-        Synchronize the local model with the global model at the start of each round.
+        Update the reference global model at the start of each round.
+
+        # TODO: check whether we can safely just move all this logic in round_start() for all algorithms to the end of aggregate() method and remove round_start() overrides altogether
+        # TODO: should this logic be linked with the same granularity as aggregate(), rather than always on round_start?
         """
-        # Receive the latest global model from the server
-        self.local_model = self.comm.broadcast(
-            self.local_model,
-            src=0,
-        )
-        # Update the reference global model
+        # Update the reference global model (self.local_model already contains latest from aggregate())
         self.global_model.load_state_dict(self.local_model.state_dict())
 
-    def round_end(self, round_idx: int) -> None:
+    def _aggregate(self) -> None:
         """
-        Aggregate model parameters across clients and update the local model.
+        FedProx aggregation: weighted averaging of model parameters.
+
+        NOTE: Compatible with all granularity levels.
         """
         # Aggregate local sample counts to compute federation total
         global_samples = self.comm.aggregate(
-            torch.tensor([self.local_samples], dtype=torch.float32),
+            torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
 
@@ -181,12 +179,13 @@ class FedProxNew(Algorithm):
             data_proportion = 0.0
         else:
             # Calculate the proportion of data this client contributed
-            data_proportion = self.local_samples / global_samples
+            data_proportion = self.local_sample_count / global_samples
 
         # All nodes participate regardless of sample count
         utils.scale_params(self.local_model, data_proportion)
 
         # Aggregate weighted model parameters from all clients
+        # NOTE: This aggregate() call returns the updated global model, so the local_model is now the aggregated global model
         self.local_model = self.comm.aggregate(
             self.local_model,
             reduction=ReductionType.SUM,

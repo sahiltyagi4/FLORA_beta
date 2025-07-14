@@ -21,13 +21,12 @@ import torch
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 from torch import nn
+# from torch.utils.tensorboard import SummaryWriter
 
-from .algorithms import utils as alg_utils
 from .algorithms.BaseAlgorithm import Algorithm
 from .communicator.BaseCommunicator import Communicator
 from .data.DataModule import DataModule
 from .mixins import SetupMixin
-
 
 # class NodeRole(Enum):
 #     """
@@ -73,6 +72,7 @@ class Node(SetupMixin):
         data_cfg: DictConfig,
         local_rank: int,
         world_size: int,
+        log_dir: str,
         device: str = "auto",
         **kwargs: Any,
     ):
@@ -99,11 +99,15 @@ class Node(SetupMixin):
         # Data module
         self.datamodule: DataModule = instantiate(data_cfg)
 
+        # TensorBoard setup
+        # self.tb_writer: SummaryWriter = SummaryWriter(log_dir=log_dir)
+
         # Federated learning algorithm
         self.algo: Algorithm = instantiate(
             algo_cfg,
-            local_model=self.local_model,
             comm=self.comm,
+            local_model=self.local_model,
+            tb_writer=None,
         )
 
     def __repr__(self) -> str:
@@ -131,7 +135,7 @@ class Node(SetupMixin):
         return self.local_rank != 0
         # return True
 
-    def _setup_impl(self) -> None:
+    def _setup(self) -> None:
         """
         Initialize node dependencies and prepare for federated learning execution.
 
@@ -143,9 +147,10 @@ class Node(SetupMixin):
         # Initialize communication backend
         self.comm.setup()
 
+        self.algo.setup()
         # summary(self.model, verbose=1)
 
-    def execute_round(self, round_idx: int) -> dict[str, float]:
+    def round_exec(self, round_idx: int) -> dict[str, float]:
         """
         Execute federated learning round with algorithm-controlled communication.
         Node provides communication infrastructure, Algorithm controls federated lifecycle.
@@ -159,41 +164,14 @@ class Node(SetupMixin):
         if not self.is_ready:
             raise RuntimeError(f"Node {self.id} not ready - call setup() first")
 
-        print(f"[ROUND-START] Round {round_idx + 1}", flush=True)
+        print(f"[ROUND-START] R{round_idx + 1}", flush=True)
         round_start_time = time.time()
-
-        # Reset round state (simple and explicit)
-        self.algo.round_setup(round_idx)
 
         # Model state before any synchronization
         metrics: dict[str, float] = dict(round_idx=round_idx)
 
-        # Capture before-sync state
-        hash_before_sync = alg_utils.hash_model_params(self.algo.local_model)
-        metrics["param_norm/before_sync"] = alg_utils.get_param_norm(
-            self.algo.local_model
-        )
-
-        # Round Start Logic: e.g., Synchronization
+        # Round Start Logic with automatic tracking
         self.algo.round_start(round_idx)
-
-        # Capture after-sync state and show transition
-        hash_after_sync = alg_utils.hash_model_params(self.algo.local_model)
-        metrics["param_norm/after_sync"] = alg_utils.get_param_norm(
-            self.algo.local_model
-        )
-        metrics["param_norm/sync_delta"] = (
-            metrics["param_norm/after_sync"] - metrics["param_norm/before_sync"]
-        )
-
-        # Consolidated round_start transition print
-        sync_changed = hash_before_sync != hash_after_sync
-        print(
-            f"[ROUND-SYNC] hash: {hash_before_sync[:8]} → {hash_after_sync[:8]} | "
-            f"norm: {metrics['param_norm/before_sync']:.4f} → {metrics['param_norm/after_sync']:.4f} "
-            f"(Δ={metrics['param_norm/sync_delta']:.6f}) | "
-            f"{'CHANGED' if sync_changed else 'UNCHANGED'}"
-        )
 
         # 4. Local training (only for trainer nodes)
         if self.should_train():
@@ -201,12 +179,6 @@ class Node(SetupMixin):
                 raise ValueError(
                     "ERROR: Node is configured to train but no training DataLoader is provided."
                 )
-            # Capture before-training state
-            hash_before_train = alg_utils.hash_model_params(self.algo.local_model)
-            metrics["param_norm/before_train_round"] = alg_utils.get_param_norm(
-                self.algo.local_model
-            )
-
             # Centralized device management: ensure model is on compute device
             self.algo.local_model.to(self.device)
 
@@ -215,61 +187,18 @@ class Node(SetupMixin):
                 self.datamodule.train,
                 round_idx,
             )
-
-            # Capture after-training state and show transition
-            hash_after_train = alg_utils.hash_model_params(self.algo.local_model)
-            metrics["param_norm/after_train_round"] = alg_utils.get_param_norm(
-                self.algo.local_model
-            )
-            metrics["param_norm/train_round_delta"] = (
-                metrics["param_norm/after_train_round"]
-                - metrics["param_norm/before_train_round"]
-            )
-
-            # Consolidated train_round transition print
-            train_changed = hash_before_train != hash_after_train
-            print(
-                f"[TRAIN-EXEC] hash: {hash_before_train[:8]} → {hash_after_train[:8]} | "
-                f"norm: {metrics['param_norm/before_train_round']:.4f} → {metrics['param_norm/after_train_round']:.4f} "
-                f"(Δ={metrics['param_norm/train_round_delta']:.6f}) | "
-                f"{'CHANGED' if train_changed else 'UNCHANGED'}"
-            )
         else:
             print("[NODE-SKIP-TRAIN] Server node - no local training")
 
-        # Capture before-aggregation state
-        hash_before_agg = alg_utils.hash_model_params(self.algo.local_model)
-        metrics["param_norm/before_agg"] = alg_utils.get_param_norm(
-            self.algo.local_model
-        )
-
-        # Round End Logic: e.g. Aggregation
+        # Round End Logic with automatic tracking
         self.algo.round_end(round_idx)
 
-        # Capture after-aggregation state and show transition
-        hash_after_agg = alg_utils.hash_model_params(self.algo.local_model)
-        metrics["param_norm/after_agg"] = alg_utils.get_param_norm(
-            self.algo.local_model
-        )
-        metrics["param_norm/agg_delta"] = (
-            metrics["param_norm/after_agg"] - metrics["param_norm/before_agg"]
-        )
-
-        # Consolidated round_end transition print
-        agg_changed = hash_before_agg != hash_after_agg
-        print(
-            f"[ROUND-AGG] hash: {hash_before_agg[:8]} → {hash_after_agg[:8]} | "
-            f"norm: {metrics['param_norm/before_agg']:.4f} → {metrics['param_norm/after_agg']:.4f} "
-            f"(Δ={metrics['param_norm/agg_delta']:.6f}) | "
-            f"{'CHANGED' if agg_changed else 'UNCHANGED'}"
-        )
-
         # Collect all metrics from algorithm execution
-        metrics.update(self.algo.metrics.to_dict())
         metrics["time/round"] = time.time() - round_start_time
+        metrics.update(self.algo.metrics.to_dict())
 
         print(
-            f"[ROUND-END] Round {round_idx + 1} |",
+            f"[ROUND-END] R{round_idx + 1} |",
             {k: round(v, 2) if isinstance(v, float) else v for k, v in metrics.items()},
             flush=True,
         )

@@ -13,10 +13,22 @@
 # limitations under the License.
 
 import copy
-from typing import Any, Dict, List, Optional
+import hashlib
+import logging
+import time
+from abc import ABC, abstractmethod
+from contextlib import contextmanager
+from enum import Enum
+from functools import wraps
+from typing import Any, Callable, Dict, List, Optional, TypeVar
+
+import rich.repr
 import torch
 from torch import nn
-import hashlib
+from torch.utils.data import DataLoader
+
+# from torch.utils.tensorboard import SummaryWriter
+from typing import TYPE_CHECKING
 
 
 def get_param_norm(model: nn.Module) -> float:
@@ -298,3 +310,47 @@ def hash_model_params(model: nn.Module) -> str:
 
     # Generate deterministic hash
     return hashlib.sha256(param_bytes).hexdigest()[:16]  # First 16 chars for brevity
+
+
+def log_param_changes(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Decorator to automatically track parameter changes for a method"""
+
+    # if TYPE_CHECKING:
+    # from .BaseAlgorithm import Algorithm
+
+    @wraps(func)
+    def wrapper(algo: "Algorithm", *args: Any, **kwargs: Any) -> Any:
+        phase = func.__name__  # Automatically get the function name
+        before_norm = get_param_norm(algo.local_model)
+        before_hash = hash_model_params(algo.local_model)
+
+        # Execute the original function
+        result = func(algo, *args, **kwargs)
+
+        after_norm = get_param_norm(algo.local_model)
+        after_hash = hash_model_params(algo.local_model)
+
+        # Log everything
+        delta = after_norm - before_norm
+        changed = before_hash != after_hash
+
+        if algo.tb_writer:
+            algo.tb_writer.add_scalar(
+                f"param_norm/{phase}_pre", before_norm, algo.tb_global_step
+            )
+            algo.tb_writer.add_scalar(
+                f"param_norm/{phase}_post", after_norm, algo.tb_global_step
+            )
+            algo.tb_writer.add_scalar(
+                f"param_norm/{phase}_delta", delta, algo.tb_global_step
+            )
+
+        print(
+            f"[{phase.upper()}] hash: {before_hash[:8]} → {after_hash[:8]} | "
+            f"norm: {before_norm:.4f} → {after_norm:.4f} (Δ={delta:.6f}) | "
+            f"{'CHANGED' if changed else 'UNCHANGED'}"
+        )
+
+        return result
+
+    return wrapper

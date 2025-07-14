@@ -145,34 +145,42 @@ class FedMomNew(Algorithm):
     FedMom applies momentum to the aggregation of model updates, improving convergence and stability in federated learning.
     """
 
-    def __init__(
-        self,
-        local_model: nn.Module,
-        comm: Communicator,
-        max_epochs: int,
-        lr: float = 0.01,
-        momentum: float = 0.9,
-    ):
-        super().__init__(local_model, comm, max_epochs)
-        self.lr = lr
+    def __init__(self, momentum: float = 0.9, **kwargs):
+        """Initialize FedMom algorithm with momentum parameter and granularity validation."""
+        super().__init__(**kwargs)
         self.momentum = momentum
 
-        # ---
-        self.global_model = copy.deepcopy(local_model)
+        # FedMom works best at ROUND level for optimal server-side momentum accumulation
+        if self.agg_level != "ROUND":
+            import warnings
+
+            warnings.warn(
+                f"FedMom designed for agg_level='ROUND' but got '{self.agg_level}'. "
+                f"EPOCH/ITER levels may work but could affect momentum convergence properties.",
+                UserWarning,
+            )
+
+    def _setup(self) -> None:
+        """
+        FedMom-specific setup: initialize global model and velocity buffers.
+        """
+        super()._setup()
+
+        self.global_model = copy.deepcopy(self.local_model)
 
         # Initialize velocity (server-side momentum) to zero
         self.velocity: Dict[str, torch.Tensor] = {}
-        for name, param in local_model.named_parameters():
+        for name, param in self.local_model.named_parameters():
             if param.requires_grad:
                 self.velocity[name] = torch.zeros_like(param.data)
 
-    def configure_optimizer(self) -> torch.optim.Optimizer:
+    def _configure_local_optimizer(self, local_lr: float) -> torch.optim.Optimizer:
         """
         Configure the SGD optimizer for local model updates.
         """
-        return torch.optim.SGD(self.local_model.parameters(), lr=self.lr)
+        return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def train_step(self, batch: Any, batch_idx: int) -> Tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any, batch_idx: int) -> Tuple[torch.Tensor, int]:
         """
         Perform a forward pass and compute the loss for a single batch.
         """
@@ -181,18 +189,23 @@ class FedMomNew(Algorithm):
         loss = torch.nn.functional.cross_entropy(outputs, targets)
         return loss, inputs.size(0)
 
-    def round_start(self, round_idx: int) -> None:
+    def _round_start(self, round_idx: int) -> None:
         """
-        Synchronize the local model with the global model at the start of each round.
+        Update global model reference at the start of each round.
+
+        # TODO: check whether we can safely just move all this logic in round_start() for all algorithms to the end of aggregate() method and remove round_start() overrides altogether
+        # TODO: should this logic be linked with the same granularity as aggregate(), rather than always on round_start?
         """
-        # Receive global model via broadcast from rank 0 (server)
-        self.local_model = self.comm.broadcast(self.local_model, src=0)
-        # Update global model reference
+        # Update global model reference (self.local_model already contains latest from aggregate())
         self.global_model.load_state_dict(self.local_model.state_dict())
 
-    def round_end(self, round_idx: int) -> None:
+    def _aggregate(self) -> None:
         """
-        Aggregate model parameters across clients using momentum and update the local model.
+        FedMom aggregation: server-side momentum on aggregated parameter deltas.
+
+        NOTE: Works best at ROUND level but compatible with other granularities
+        - Server-side momentum accumulates optimally across complete training cycles
+        - EPOCH/ITER levels may work but could affect momentum convergence properties
         """
         # Compute local parameter delta from global model
         local_deltas: Dict[str, torch.Tensor] = {}
@@ -205,7 +218,7 @@ class FedMomNew(Algorithm):
         # Aggregate local sample counts to compute federation total
 
         global_samples = self.comm.aggregate(
-            torch.tensor([self.local_samples], dtype=torch.float32),
+            torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
 
@@ -214,7 +227,7 @@ class FedMomNew(Algorithm):
             data_proportion = 0.0
         else:
             # Calculate data proportion for weighted aggregation of deltas
-            data_proportion = self.local_samples / global_samples
+            data_proportion = self.local_sample_count / global_samples
 
         # Scale local deltas by data proportion
         for name in local_deltas:
@@ -233,7 +246,7 @@ class FedMomNew(Algorithm):
                 self.velocity[name].mul_(self.momentum).add_(aggregated_deltas[name])
 
                 # Update global model parameters using alpha argument
-                param.data.sub_(self.velocity[name], alpha=self.lr)
+                param.data.sub_(self.velocity[name], alpha=self.local_lr)
 
         # Update local model to match updated global model
         self.local_model = copy.deepcopy(self.global_model)

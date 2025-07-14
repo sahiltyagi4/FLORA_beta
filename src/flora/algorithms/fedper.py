@@ -157,23 +157,16 @@ class FedPerNew(Algorithm):
     each client maintains its own personal head for local adaptation.
     """
 
-    def __init__(
-        self,
-        local_model: nn.Module,
-        comm: Communicator,
-        max_epochs: int,
-        lr: float = 0.01,
-        personal_layers: Optional[list[str]] = None,
-    ):
-        super().__init__(local_model, comm, max_epochs)
-        self.lr = lr
+    def __init__(self, personal_layers: Optional[list[str]] = None, **kwargs):
+        """Initialize FedPer algorithm with personalization layer configuration."""
+        super().__init__(**kwargs)
         self.personal_layers = personal_layers or ["classifier", "head", "fc"]
 
-    def configure_optimizer(self) -> torch.optim.Optimizer:
+    def _configure_local_optimizer(self, local_lr: float) -> torch.optim.Optimizer:
         """
         SGD optimizer for both base and personal parameters.
         """
-        return torch.optim.SGD(self.local_model.parameters(), lr=self.lr)
+        return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
     def _is_personal_layer(self, param_name: str) -> bool:
         """
@@ -181,7 +174,7 @@ class FedPerNew(Algorithm):
         """
         return any(layer_name in param_name for layer_name in self.personal_layers)
 
-    def train_step(self, batch: Any, batch_idx: int) -> Tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
         """
         Perform a forward pass and compute the loss for a single batch.
         """
@@ -190,22 +183,17 @@ class FedPerNew(Algorithm):
         loss = torch.nn.functional.cross_entropy(outputs, targets)
         return loss, inputs.size(0)
 
-    def round_start(self, round_idx: int) -> None:
+    def _aggregate(self) -> None:
         """
-        Synchronize the local model with the global base model at the start of each round.
-        The personal head remains local and is not synchronized.
-        """
-        self.local_model = self.comm.broadcast(self.local_model, src=0)
+        FedPer aggregation: aggregate base model while preserving personal layers.
 
-    def round_end(self, round_idx: int) -> None:
-        """
-        FedPer aggregates only non-personal parameters (base model)
-        Personal layers (head/classifier) remain local for personalization
+        NOTE: Compatible with all granularity levels.
+        - Only non-personal parameters are aggregated while personal layers remain local for personalization.
         """
 
         # Aggregate local sample counts to compute federation total
         global_samples = self.comm.aggregate(
-            torch.tensor([self.local_samples], dtype=torch.float32),
+            torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
 
@@ -214,7 +202,7 @@ class FedPerNew(Algorithm):
             data_proportion = 0.0
         else:
             # Calculate data proportion for weighted aggregation
-            data_proportion = self.local_samples / global_samples
+            data_proportion = self.local_sample_count / global_samples
 
         # All nodes participate regardless of sample count
         utils.scale_params(self.local_model, data_proportion)

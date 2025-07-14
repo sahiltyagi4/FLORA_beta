@@ -37,13 +37,13 @@ class SetupMixin(ABC):
             self._setup_complete = False
 
         if self._setup_complete:
-            print(f"{self.__class__.__name__} is already set up. Skipping setup.")
+            print(f"NOTE: {self.__class__.__name__} is already set up. Skipping setup.")
             return
 
-        self._setup_impl(*args, **kwargs)
+        self._setup(*args, **kwargs)
         self._setup_complete = True
 
     @abstractmethod
-    def _setup_impl(self, *args: Any, **kwargs: Any) -> None:
+    def _setup(self, *args: Any, **kwargs: Any) -> None:
         """Implementation-specific setup logic."""
         pass

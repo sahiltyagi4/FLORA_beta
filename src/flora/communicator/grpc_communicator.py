@@ -101,7 +101,7 @@ class GrpcCommunicator(Communicator):
         """True if rank 0 (server)."""
         return self.local_rank == 0
 
-    def _setup_impl(self):
+    def _setup(self):
         """Initialize gRPC server or client based on rank."""
         # Setup - Ray already logs actor initialization
         if self.is_server:
@@ -160,12 +160,16 @@ class GrpcCommunicator(Communicator):
         """Aggregate across all ranks via central server."""
         # Extract tensors and perform aggregation
         tensordict = self._extract_tensordict_from_msg(msg)
-        
+
         if self.is_server:
-            print(f"[AGG-SERVER] {type(msg).__name__} | {len(tensordict)} tensors | {reduction.value}")
+            print(
+                f"[AGG-SERVER] {type(msg).__name__} | {len(tensordict)} tensors | {reduction.value}"
+            )
         else:
-            print(f"[AGG-CLIENT] {type(msg).__name__} | {len(tensordict)} tensors | {reduction.value}")
-        
+            print(
+                f"[AGG-CLIENT] {type(msg).__name__} | {len(tensordict)} tensors | {reduction.value}"
+            )
+
         aggregated_tensordict = self._grpc_aggregate(tensordict, reduction)
 
         # Apply result back to original message format

@@ -5,7 +5,7 @@ import warnings
 
 from src.flora.communicator import grpc_communicator_pb2 as src_dot_flora_dot_communicator_dot_grpc__communicator__pb2
 
-GRPC_GENERATED_VERSION = '1.73.0'
+GRPC_GENERATED_VERSION = '1.71.2'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 

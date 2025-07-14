@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 
 import rich.repr
 from omegaconf import DictConfig
@@ -43,12 +43,13 @@ class Topology(SetupMixin, ABC):
         utils.log_sep(f"{self.__class__.__name__} Init")
         self.__nodes: List[Node] = []
 
-    def _setup_impl(
+    def _setup(
         self,
         comm_cfg: DictConfig,
         algo_cfg: DictConfig,
         model_cfg: DictConfig,
         data_cfg: DictConfig,
+        log_dir: str,
     ):
         """Implementation-specific setup logic."""
         self.__nodes = self.create_nodes(
@@ -56,6 +57,7 @@ class Topology(SetupMixin, ABC):
             algo_cfg=algo_cfg,
             model_cfg=model_cfg,
             data_cfg=data_cfg,
+            log_dir=log_dir,
         )
 
         if not self.__nodes:
@@ -68,6 +70,7 @@ class Topology(SetupMixin, ABC):
         algo_cfg: DictConfig,
         model_cfg: DictConfig,
         data_cfg: DictConfig,
+        log_dir: str,
     ) -> List[Node]:
         """
         Create and configure nodes for this topology.

@@ -135,23 +135,13 @@ class FedBNNew(Algorithm):
     allowing each client to maintain its own batch normalization statistics for improved personalization.
     """
 
-    def __init__(
-        self,
-        local_model: nn.Module,
-        comm: Communicator,
-        max_epochs: int,
-        lr: float = 0.01,
-    ):
-        super().__init__(local_model, comm, max_epochs)
-        self.lr = lr
-
-    def configure_optimizer(self) -> torch.optim.Optimizer:
+    def _configure_local_optimizer(self, local_lr: float) -> torch.optim.Optimizer:
         """
         SGD optimizer for local updates.
         """
-        return torch.optim.SGD(self.local_model.parameters(), lr=self.lr)
+        return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def train_step(self, batch: Any, batch_idx: int) -> Tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
         """
         Perform a forward pass and compute the loss for a single batch.
         """
@@ -160,30 +150,12 @@ class FedBNNew(Algorithm):
         loss = torch.nn.functional.cross_entropy(outputs, targets)
         return loss, inputs.size(0)
 
-    def round_start(self, round_idx: int) -> None:
+    def _aggregate(self) -> None:
         """
-        Synchronize the local model with the global model at the start of each round, preserving local batch normalization statistics.
-        """
-        # Receive global model via broadcast from rank 0 (server)
-        self.local_model = self.comm.broadcast(
-            self.local_model,
-            src=0,
-        )
+        FedBN aggregation: aggregate non-BatchNorm parameters while keeping BN layers local.
 
-        # Store local BN parameters before updating model
-        local_bn_params = {}
-        for name, param in self.local_model.named_parameters():
-            if self._is_bn_layer(name):
-                local_bn_params[name] = param.data.clone()
-
-        # Restore local BN parameters (keep BN layers local)
-        for name, param in self.local_model.named_parameters():
-            if self._is_bn_layer(name) and name in local_bn_params:
-                param.data.copy_(local_bn_params[name])
-
-    def round_end(self, round_idx: int) -> None:
-        """
-        Aggregate only non-batch normalization parameters across clients and update the local model.
+        NOTE: Compatible with all granularity levels.
+        - Only non-BatchNorm parameters are aggregated while BatchNorm statistics remain local for domain adaptation.
         """
         # Save local BN parameters before aggregation
         local_bn_params = {}
@@ -193,7 +165,7 @@ class FedBNNew(Algorithm):
 
         # Aggregate local sample counts to compute federation total
         global_samples = self.comm.aggregate(
-            torch.tensor([self.local_samples], dtype=torch.float32),
+            torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
 
@@ -202,7 +174,7 @@ class FedBNNew(Algorithm):
             data_proportion = 0.0
         else:
             # Calculate data proportion for weighted aggregation
-            data_proportion = self.local_samples / global_samples
+            data_proportion = self.local_sample_count / global_samples
 
         # Scale only non-BN parameters by data proportion (all nodes participate)
         for name, param in self.local_model.named_parameters():

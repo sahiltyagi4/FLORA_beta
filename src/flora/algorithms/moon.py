@@ -207,37 +207,38 @@ class MOONNew(Algorithm):
 
     def __init__(
         self,
-        local_model: nn.Module,
-        comm: Communicator,
-        max_epochs: int,
-        lr: float = 0.01,
         mu: float = 1.0,
         temperature: float = 0.5,
         num_prev_models: int = 1,
+        **kwargs,
     ):
-        super().__init__(local_model, comm, max_epochs)
-        self.lr = lr
+        """Initialize MOON algorithm with contrastive learning parameters."""
+        super().__init__(**kwargs)
         self.mu = mu
         self.temperature = temperature
         self.num_prev_models = num_prev_models
 
-        # ---
-        if not isinstance(local_model, MOONWrapper):
-            wrapped_initial = MOONWrapper(local_model)
-        else:
-            wrapped_initial = local_model
+    def _setup(self) -> None:
+        """
+        MOON-specific setup: wrap model and initialize global model and previous models.
+        """
+        if not isinstance(self.local_model, MOONWrapper):
+            wrapped_initial = MOONWrapper(self.local_model)
+            self.local_model = wrapped_initial
 
-        self.global_model = copy.deepcopy(wrapped_initial)
+        super()._setup()
+
+        self.global_model = copy.deepcopy(self.local_model)
         self.global_model.eval()
         self.prev_models = []
 
-    def configure_optimizer(self) -> torch.optim.Optimizer:
+    def _configure_local_optimizer(self, local_lr: float) -> torch.optim.Optimizer:
         """
         SGD optimizer for local updates.
         """
-        return torch.optim.SGD(self.local_model.parameters(), lr=self.lr)
+        return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def train_step(self, batch: Any, batch_idx: int) -> Tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
         """
         Forward pass and compute the MOON loss for a single batch, including contrastive loss.
         """
@@ -293,28 +294,29 @@ class MOONNew(Algorithm):
 
         return total_loss, inputs.size(0)
 
-    def round_start(self, round_idx: int) -> None:
+    def _round_start(self, round_idx: int) -> None:
         """
-        Synchronize the local model with the global model at the start of each round.
-        """
-        # Receive global model via broadcast from rank 0 (server)
-        self.local_model = self.comm.broadcast(
-            self.local_model,
-            src=0,
-        )
+        Update global model reference and set to eval mode at the start of each round.
 
-        # Update global model reference
+        # TODO: check whether we can safely just move all this logic in round_start() for all algorithms to the end of aggregate() method and remove round_start() overrides altogether
+        # TODO: should this logic be linked with the same granularity as aggregate(), rather than always on round_start?
+        """
+        # Update global model reference (self.local_model already contains latest from aggregate())
         self.global_model.load_state_dict(self.local_model.state_dict())
+        # Set global model to eval mode for contrastive learning
         self.global_model.eval()
 
-    def round_end(self, round_idx: int) -> None:
+    def _aggregate(self) -> None:
         """
-        Aggregate model parameters across clients and update the local model, maintaining a history of previous models for contrastive learning.
+        MOON aggregation: weighted averaging with model history for contrastive learning.
+
+        NOTE: Compatible with all granularity levels.
+        - Previous model history is maintained regardless of aggregation frequency for negative sampling in contrastive loss.
         """
         # Aggregate local sample counts to compute federation total
 
         global_samples = self.comm.aggregate(
-            torch.tensor([self.local_samples], dtype=torch.float32),
+            torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
 
@@ -323,12 +325,13 @@ class MOONNew(Algorithm):
             data_proportion = 0.0
         else:
             # Calculate data proportion for weighted aggregation
-            data_proportion = self.local_samples / global_samples
+            data_proportion = self.local_sample_count / global_samples
 
         # All nodes participate regardless of sample count
         utils.scale_params(self.local_model, data_proportion)
 
         # Aggregate scaled models
+        # NOTE: This aggregate() call returns the updated global model, so the local_model is now the aggregated global model
         self.local_model = self.comm.aggregate(
             self.local_model,
             reduction=ReductionType.SUM,

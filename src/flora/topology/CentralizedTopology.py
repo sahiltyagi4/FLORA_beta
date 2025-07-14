@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, List
+import os
+from typing import Any, Dict, List, Optional
 
 import time
 
@@ -57,6 +58,7 @@ class CentralizedTopology(Topology):
         algo_cfg: DictConfig,
         model_cfg: DictConfig,
         data_cfg: DictConfig,
+        log_dir: str,
     ) -> List[Node]:
         """
         Create nodes for centralized topology.
@@ -87,9 +89,9 @@ class CentralizedTopology(Topology):
                 node_rayopts["num_gpus"] = 1.0 / self.num_nodes
 
             if rank == 0:
-                node_id = f"R{rank}-SERVER"
+                node_id = f"N{rank}-SERVER"
             else:
-                node_id = f"R{rank}-Client"  # Purposefully using different casing for log readability
+                node_id = f"N{rank}-Client"  # Purposefully using different casing for log readability
 
             node = Node.options(**node_rayopts).remote(
                 id=node_id,
@@ -99,6 +101,7 @@ class CentralizedTopology(Topology):
                 data_cfg=data_cfg,
                 local_rank=rank,
                 world_size=self.num_nodes,
+                log_dir=os.path.join(log_dir, node_id),
             )
 
             nodes.append(node)

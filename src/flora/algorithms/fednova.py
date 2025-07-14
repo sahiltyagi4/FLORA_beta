@@ -158,31 +158,29 @@ class FedNovaNew(Algorithm):
     accounting for varying numbers of local steps and learning dynamics across clients.
     """
 
-    def __init__(
-        self,
-        local_model: nn.Module,
-        comm: Communicator,
-        max_epochs: int,
-        lr: float = 0.01,
-        weight_decay: float = 0.0,
-    ):
-        super().__init__(local_model, comm, max_epochs)
-        self.lr = lr
+    def __init__(self, weight_decay: float = 0.0, **kwargs):
+        """Initialize FedNova algorithm with weight decay parameter."""
+        super().__init__(**kwargs)
         self.weight_decay = weight_decay
 
-        # ---
-        self.global_model = copy.deepcopy(local_model)
+    def _setup(self) -> None:
+        """
+        FedNova-specific setup: initialize global model and step counter.
+        """
+        super()._setup()
+
+        self.global_model = copy.deepcopy(self.local_model)
         self.local_steps_this_round: int = 0
 
-    def configure_optimizer(self) -> torch.optim.Optimizer:
+    def _configure_local_optimizer(self, local_lr: float) -> torch.optim.Optimizer:
         """
         SGD optimizer with weight decay.
         """
         return torch.optim.SGD(
-            self.local_model.parameters(), lr=self.lr, weight_decay=self.weight_decay
+            self.local_model.parameters(), lr=local_lr, weight_decay=self.weight_decay
         )
 
-    def train_step(self, batch: Any, batch_idx: int) -> Tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
         """
         Perform a forward pass and compute cross-entropy loss for a batch.
         """
@@ -191,20 +189,23 @@ class FedNovaNew(Algorithm):
         loss = torch.nn.functional.cross_entropy(outputs, targets)
         return loss, inputs.size(0)
 
-    def round_start(self, round_idx: int) -> None:
+    def _round_start(self, round_idx: int) -> None:
         """
-        Synchronize the local model with the global model at the start of each round.
+        Update global model reference and reset step counter at the start of each round.
+
+        # TODO: check whether we can safely just move all this logic in round_start() for all algorithms to the end of aggregate() method and remove round_start() overrides altogether
+        # TODO: should this logic be linked with the same granularity as aggregate(), rather than always on round_start?
         """
-        # Receive the latest global model from the server
-        self.local_model = self.comm.broadcast(self.local_model, src=0)
+        # Update global model reference (self.local_model already contains latest from aggregate())
         self.global_model.load_state_dict(self.local_model.state_dict())
+        # Reset local step counter for normalization calculations
         self.local_steps_this_round = 0
 
-    def optimizer_step(self, batch_idx: int) -> None:
+    def _optimizer_step(self, batch_idx: int) -> None:
         """
         Perform an optimizer step and increment the local step counter for normalization.
         """
-        self.optimizer.step()
+        self.local_optimizer.step()
         self.local_steps_this_round += 1
 
     def _compute_alpha(self, lr: float, local_steps: int) -> float:
@@ -220,11 +221,14 @@ class FedNovaNew(Algorithm):
         alpha *= lr
         return alpha
 
-    def round_end(self, round_idx: int) -> None:
+    def _aggregate(self) -> None:
         """
-        Apply FedNova normalized averaging and update the global model with aggregated updates.
+        FedNova aggregation: normalized averaging based on local training steps.
+
+        NOTE: Compatible with all granularity levels.
+        - Normalization factor adapts automatically based on actual steps taken since last aggregation.
         """
-        lr = self.optimizer.param_groups[0]["lr"]
+        lr = self.local_optimizer.param_groups[0]["lr"]
         alpha = self._compute_alpha(lr, self.local_steps_this_round)
 
         # Compute normalized parameter deltas for each trainable parameter
@@ -237,7 +241,7 @@ class FedNovaNew(Algorithm):
         # Aggregate local sample counts to compute federation total
 
         global_samples = self.comm.aggregate(
-            torch.tensor([self.local_samples], dtype=torch.float32),
+            torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
 
@@ -246,7 +250,7 @@ class FedNovaNew(Algorithm):
             data_proportion = 0.0
         else:
             # Calculate the proportion of data this client contributed
-            data_proportion = self.local_samples / global_samples
+            data_proportion = self.local_sample_count / global_samples
 
         # Scale normalized deltas by the data proportion for weighted aggregation
         for name, delta in normalized_deltas.items():

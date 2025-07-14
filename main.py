@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import time
+
 import hydra
+from hydra.utils import get_original_cwd
 from omegaconf import DictConfig, OmegaConf
-
-from src.flora import utils
-from src.flora import Engine
-
-
 from rich.pretty import pprint
+
+from src.flora import Engine, utils
 
 # =============================================================================
 
@@ -34,6 +34,10 @@ def main(cfg: DictConfig) -> None:
     logger = logging.getLogger(__name__)
 
     utils.log_sep("FLORA Federated Learning Framework", color="blue")
+
+    print(f"Current working directory : {os.getcwd()}")
+    print(f"Orig working directory    : {get_original_cwd()}")
+
     print("Configuration:")
     pprint(
         OmegaConf.to_container(

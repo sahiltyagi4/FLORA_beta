@@ -180,39 +180,46 @@ class ScaffoldNew(Algorithm):
     Gradient correction and control variate updates are performed each round.
     """
 
-    def __init__(
-        self,
-        local_model: nn.Module,
-        comm: Communicator,
-        max_epochs: int,
-        lr: float = 0.01,
-    ):
-        super().__init__(local_model, comm, max_epochs)
-        self.lr = lr
+    def __init__(self, **kwargs):
+        """Initialize SCAFFOLD algorithm with granularity validation."""
+        super().__init__(**kwargs)
 
-        # ---
+        # SCAFFOLD requires ROUND-level aggregation for proper control variate mathematics
+        if self.agg_level != "ROUND":
+            raise ValueError(
+                f"SCAFFOLD requires agg_level='ROUND' for proper control variate mathematics. "
+                f"Got agg_level='{self.agg_level}'. EPOCH/ITER levels would break the optimizer_steps "
+                f"counter and control variate calculations across batches."
+            )
+
+    def _setup(self) -> None:
+        """
+        SCAFFOLD-specific setup: initialize control variates and tracking structures.
+        """
+        super()._setup()
+
         self.server_cv = {}
         self.client_cv = {}
         self.old_client_cv = {}
-        self.global_model = copy.deepcopy(local_model)
+        self.global_model = copy.deepcopy(self.local_model)
         self.model_delta = {}
         self.cv_delta = {}
         self.optimizer_steps = 0
 
-        for name, param in local_model.named_parameters():
+        for name, param in self.local_model.named_parameters():
             self.server_cv[name] = torch.zeros_like(param.data)
             self.client_cv[name] = torch.zeros_like(param.data)
             self.old_client_cv[name] = torch.zeros_like(param.data)
             self.model_delta[name] = torch.zeros_like(param.data)
             self.cv_delta[name] = torch.zeros_like(param.data)
 
-    def configure_optimizer(self) -> torch.optim.Optimizer:
+    def _configure_local_optimizer(self, local_lr: float) -> torch.optim.Optimizer:
         """
         SGD optimizer for local updates.
         """
-        return torch.optim.SGD(self.local_model.parameters(), lr=self.lr)
+        return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def train_step(self, batch: Any, batch_idx: int) -> Tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any, batch_idx: int) -> Tuple[torch.Tensor, int]:
         """
         Forward pass and compute cross-entropy loss for a batch.
         """
@@ -221,22 +228,26 @@ class ScaffoldNew(Algorithm):
         loss = torch.nn.functional.cross_entropy(outputs, targets)
         return loss, inputs.size(0)
 
-    def optimizer_step(self, batch_idx: int) -> None:
+    def _optimizer_step(self, batch_idx: int) -> None:
         """
         Track optimizer steps for control variate normalization.
         """
-        self.optimizer.step()
+        self.local_optimizer.step()
         self.optimizer_steps += 1
 
-    def round_start(self, round_idx: int) -> None:
+    def _round_start(self, round_idx: int) -> None:
         """
-        Synchronize the local model with the global model at the start of each round and reset optimizer step count.
+        Reset optimizer step count and update global model reference at the start of each round.
+
+        # TODO: check whether we can safely just move all this logic in round_start() for all algorithms to the end of aggregate() method and remove round_start() overrides altogether
+        # TODO: should this logic be linked with the same granularity as aggregate(), rather than always on round_start?
         """
-        self.local_model = self.comm.broadcast(self.local_model, src=0)
+        # Update global model reference (self.local_model already contains latest from aggregate())
         self.global_model.load_state_dict(self.local_model.state_dict())
+        # Reset optimizer step counter for SCAFFOLD control variate calculations
         self.optimizer_steps = 0
 
-    def backward_pass(self, loss: torch.Tensor, batch_idx: int) -> None:
+    def _backward_pass(self, loss: torch.Tensor, batch_idx: int) -> None:
         """
         Apply SCAFFOLD gradient correction after backward pass.
         """
@@ -245,12 +256,17 @@ class ScaffoldNew(Algorithm):
             if param.grad is not None and name in self.server_cv:
                 param.grad.add_(self.server_cv[name] - self.client_cv[name])
 
-    def round_end(self, round_idx: int) -> None:
+    def _aggregate(self) -> None:
         """
-        Aggregate model deltas and control variate deltas, then update global model and server control variates.
+        SCAFFOLD aggregation: aggregate model deltas and control variate deltas.
+
+        NOTE: SCAFFOLD REQUIRES ROUND-level aggregation ONLY (agg_level=ROUND, agg_freq=1)
+        - Control variate mathematics depend on complete local training cycles
+        - optimizer_steps counter assumes full round completion
+        - EPOCH/ITER level aggregation would break control variate calculations
         """
         effective_comm_freq = max(1, self.optimizer_steps)
-        lr = self.optimizer.param_groups[0]["lr"]
+        lr = self.local_optimizer.param_groups[0]["lr"]
 
         # Update client control variates
         for (name1, param1), (name2, param2) in zip(
@@ -280,7 +296,7 @@ class ScaffoldNew(Algorithm):
             msg=self.cv_delta, reduction=ReductionType.MEAN
         )
 
-        lr = self.optimizer.param_groups[0]["lr"]
+        lr = self.local_optimizer.param_groups[0]["lr"]
         utils.apply_model_delta(self.global_model, aggregated_model_deltas, scale=lr)
         for name in self.server_cv:
             if name in aggregated_cv_deltas:

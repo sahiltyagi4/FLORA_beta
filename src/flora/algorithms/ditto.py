@@ -143,34 +143,30 @@ class DittoNew(Algorithm):
     The personal model is trained with a proximal regularization term to stay close to the global model.
     """
 
-    def __init__(
-        self,
-        local_model: nn.Module,
-        comm: Communicator,
-        max_epochs: int,
-        lr: float = 0.01,
-        global_lr: float = 0.01,
-        ditto_lambda: float = 0.1,
-    ):
-        super().__init__(local_model, comm, max_epochs)
-        self.lr = lr
+    def __init__(self, global_lr: float = 0.01, ditto_lambda: float = 0.1, **kwargs):
+        """Initialize Ditto algorithm with global learning rate and regularization parameter."""
+        super().__init__(**kwargs)
         self.global_lr = global_lr
         self.ditto_lambda = ditto_lambda
 
-        # ---
-        self.global_model = copy.deepcopy(local_model)
+    def _setup(self) -> None:
+        """
+        Ditto-specific setup: initialize global model and optimizer.
+        """
+        super()._setup()
 
+        self.global_model = copy.deepcopy(self.local_model)
         self.global_optimizer = torch.optim.SGD(
             self.global_model.parameters(), lr=self.global_lr
         )
 
-    def configure_optimizer(self) -> torch.optim.Optimizer:
+    def _configure_local_optimizer(self, local_lr: float) -> torch.optim.Optimizer:
         """
         SGD optimizer for local updates.
         """
-        return torch.optim.SGD(self.local_model.parameters(), lr=self.lr)
+        return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
         """
         Perform dual training: update both global model and personal model.
         """
@@ -200,19 +196,27 @@ class DittoNew(Algorithm):
 
         return total_loss, batch_size
 
-    def round_start(self, round_idx: int) -> None:
+    def _round_start(self, round_idx: int) -> None:
         """
         Synchronize the global model at the start of each round.
+
+        # NOTE: Ditto requires this broadcast because aggregate() updates self.global_model and all clients need to receive the updated global model for personalization
+
+        # TODO: check whether we can safely just move all this logic in round_start() for all algorithms to the end of aggregate() method and remove round_start() overrides altogether
+        # TODO: should this logic be linked with the same granularity as aggregate(), rather than always on round_start?
         """
         self.global_model = self.comm.broadcast(self.global_model, src=0)
 
-    def round_end(self, round_idx: int) -> None:
+    def _aggregate(self) -> None:
         """
-        Aggregate global models across clients. Personal models remain local.
+        Ditto aggregation: aggregate global models while keeping personal models local.
+
+        NOTE: Compatible with all granularity levels.
+        - Only global models are aggregated using standard weighted averaging, while personal models remain untouched.
         """
         # Aggregate local sample counts to compute federation total
         global_samples = self.comm.aggregate(
-            torch.tensor([self.local_samples], dtype=torch.float32),
+            torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
 
@@ -221,7 +225,7 @@ class DittoNew(Algorithm):
             data_proportion = 0.0
         else:
             # Calculate data proportion for weighted aggregation
-            data_proportion = self.local_samples / global_samples
+            data_proportion = self.local_sample_count / global_samples
 
         # All nodes participate regardless of sample count
         utils.scale_params(self.global_model, data_proportion)

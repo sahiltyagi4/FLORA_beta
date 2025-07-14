@@ -120,23 +120,13 @@ class FedAvgNew(Algorithm):
     Only model parameters are aggregated; all clients synchronize with the global model at the start of each round.
     """
 
-    def __init__(
-        self,
-        local_model: nn.Module,
-        comm: Communicator,
-        max_epochs: int,
-        lr: float = 0.01,
-    ):
-        super().__init__(local_model, comm, max_epochs)
-        self.lr = lr
-
-    def configure_optimizer(self) -> torch.optim.Optimizer:
+    def _configure_local_optimizer(self, local_lr: float) -> torch.optim.Optimizer:
         """
         SGD optimizer for local updates.
         """
-        return torch.optim.SGD(self.local_model.parameters(), lr=self.lr)
+        return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def train_step(self, batch: Any, batch_idx: int) -> Tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any, batch_idx: int) -> Tuple[torch.Tensor, int]:
         """
         Forward pass and compute the cross-entropy loss for a batch.
         """
@@ -146,21 +136,14 @@ class FedAvgNew(Algorithm):
         batch_size = inputs.size(0)
         return loss, batch_size
 
-    def round_start(self, round_idx: int) -> None:
-        """
-        Synchronize the local model with the global model at the start of each round.
-        """
-        # Receive the latest global model from the server (rank 0)
-        self.local_model = self.comm.broadcast(self.local_model, src=0)
-
-    def round_end(self, round_idx: int) -> None:
+    def _aggregate(self) -> None:
         """
         Aggregate model parameters across clients and update the local model with the weighted average.
         """
 
         # Aggregate local sample counts to compute federation total
         global_samples = self.comm.aggregate(
-            torch.tensor([self.local_samples], dtype=torch.float32),
+            torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
 
@@ -169,13 +152,15 @@ class FedAvgNew(Algorithm):
             data_proportion = 0.0
         else:
             # Calculate this client's data proportion for weighted aggregation
-            data_proportion = self.local_samples / global_samples
+            data_proportion = self.local_sample_count / global_samples
 
         # All nodes participate regardless of sample count
         utils.scale_params(self.local_model, data_proportion)
 
-        # Aggregate models across all clients - communicator handles transport
+        # Aggregate models across all clients
+        # NOTE: This aggregate() call returns the updated global model, so the local_model is now the aggregated global model
         self.local_model = self.comm.aggregate(
             self.local_model,
             reduction=ReductionType.SUM,
         )
+        # TODO: should we require all aggregate functions to return the updated global model nn.Module? or would that be incompatible with some algorithms? that might improve clarity and consistency of the API and data flow.

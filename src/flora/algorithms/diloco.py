@@ -151,35 +151,36 @@ class DiLoCoNew(Algorithm):
 
     def __init__(
         self,
-        local_model: nn.Module,
-        comm: Communicator,
-        max_epochs: int,
-        lr: float = 0.01,
         outer_lr: float = 0.7,
         outer_momentum: float = 0.9,
         inner_steps: int = 5,
+        **kwargs,
     ):
-        super().__init__(local_model, comm, max_epochs)
-        self.lr = lr
+        """Initialize DiLoCo algorithm with distributed optimizer parameters."""
+        super().__init__(**kwargs)
         self.outer_lr = outer_lr
         self.outer_momentum = outer_momentum
         self.inner_steps = inner_steps
 
-        # ---
-        self.global_model = copy.deepcopy(local_model)
+    def _setup(self) -> None:
+        """
+        DiLoCo-specific setup: initialize global model and velocity.
+        """
+        super()._setup()
 
+        self.global_model = copy.deepcopy(self.local_model)
         self.velocity: Dict[str, torch.Tensor] = {}
-        for name, param in local_model.named_parameters():
+        for name, param in self.local_model.named_parameters():
             if param.requires_grad:
                 self.velocity[name] = torch.zeros_like(param.data)
 
-    def configure_optimizer(self) -> torch.optim.Optimizer:
+    def _configure_local_optimizer(self, local_lr: float) -> torch.optim.Optimizer:
         """
         Configure SGD optimizer for DiLoCo local updates.
         """
-        return torch.optim.SGD(self.local_model.parameters(), lr=self.lr)
+        return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def train_step(self, batch: Any, batch_idx: int) -> Tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
         """
         Forward pass and compute cross-entropy loss for a batch.
         """
@@ -188,22 +189,22 @@ class DiLoCoNew(Algorithm):
         loss = torch.nn.functional.cross_entropy(outputs, targets)
         return loss, inputs.size(0)
 
-    def round_start(self, round_idx: int) -> None:
+    def _round_start(self, round_idx: int) -> None:
         """
-        Synchronize the local model with the global model at the start of each round.
+        Update global model reference at the start of each round.
+
+        # TODO: check whether we can safely just move all this logic in round_start() for all algorithms to the end of aggregate() method and remove round_start() overrides altogether
+        # TODO: should this logic be linked with the same granularity as aggregate(), rather than always on round_start?
         """
-        # Receive the latest global model from the server
-        self.local_model = self.comm.broadcast(self.local_model, src=0)
+        # Update global model reference (self.local_model already contains latest from aggregate())
         self.global_model.load_state_dict(self.local_model.state_dict())
 
-    def round_end(self, round_idx: int) -> None:
+    def _aggregate(self) -> None:
         """
-        Apply DiLoCo outer step with momentum aggregation.
+        DiLoCo aggregation: distributed low-communication with server-side momentum.
 
-        Steps:
-        1. Aggregate local model updates (delta from global model)
-        2. Apply server-side momentum update to global model
-        3. Broadcast updated global model to all clients
+        NOTE: Compatible with all granularity levels.
+        - Server-side momentum adapts to any aggregation frequency while maintaining convergence properties.
         """
         # Compute local model update (delta from global model)
         local_deltas: Dict[str, torch.Tensor] = {}

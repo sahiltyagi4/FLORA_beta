@@ -109,7 +109,7 @@ class TorchDistCommunicator(Communicator):
 
     #     print(f"Process group initialized successfully")
 
-    def _setup_impl(self):
+    def _setup(self):
         """
         Initialize PyTorch distributed process group.
 

@@ -12,6 +12,9 @@ set -x              # Print each command before executing it (for debugging)
 
 export PYTHONUNBUFFERED=1              # Ensure Python output isn't buffered
 
+# export TF_CPP_MIN_LOG_LEVEL=3          # Suppress TensorFlow warnings  
+# export GRPC_VERBOSITY=ERROR
+
 # PyTorch Distributed debugging and settings
 # export TORCH_DISTRIBUTED_DEBUG=DETAIL  # Enable detailed debugging output for torch.distributed
 # export TORCH_CPP_LOG_LEVEL=INFO        # Get more detailed C++ logs

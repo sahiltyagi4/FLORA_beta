@@ -36,15 +36,25 @@ data: # overrides the default mnist datamodule
 topology: # overrides the default centralized topology
   num_clients: 2 # 2 clients + 1 server = 3 total nodes
 
+# ───────────── Communication Config
+
 comm: ??? # Mandatory marker; composer must override this value
 
 # ───────────── FL Algorithm Config
 
 algo:
   _target_: src.flora.algorithms.FedAvgNew
+  local_lr: 0.01
   max_epochs: 1
-  lr: 0.01
+  agg_freq: 1
+  agg_level: ROUND
 
 # ───────────── FL Engine Config
 
 global_rounds: 3
+
+# ───────────── Hydra Config
+
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${hydra.job.config_name}

@@ -17,6 +17,8 @@ import time
 
 import ray
 import rich.repr
+from hydra.conf import HydraConf
+from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 from rich import box
@@ -44,18 +46,18 @@ class Engine(SetupMixin):
 
     def __init__(
         self,
-        cfg: DictConfig,
+        flora_cfg: DictConfig,
     ):
         super().__init__()
         utils.log_sep(f"{self.__class__.__name__} Init", color="blue")
 
-        self.cfg: DictConfig = cfg
+        self.flora_cfg: DictConfig = flora_cfg
+        self.hydra_cfg: HydraConf = HydraConfig.get()
 
-        self.topology: Topology = instantiate(self.cfg.topology)
+        self.topology: Topology = instantiate(self.flora_cfg.topology)
+        self.global_rounds: int = flora_cfg.global_rounds
 
-        self.global_rounds: int = cfg.global_rounds
-
-    def _setup_impl(self):
+    def _setup(self):
         utils.log_sep("FLORA Engine Setup", color="blue")
 
         # Initialize Ray with more verbose logging and explicit namespace
@@ -67,10 +69,11 @@ class Engine(SetupMixin):
         )
 
         self.topology.setup(
-            comm_cfg=self.cfg.comm,
-            algo_cfg=self.cfg.algo,
-            model_cfg=self.cfg.model,
-            data_cfg=self.cfg.data,
+            comm_cfg=self.flora_cfg.comm,
+            algo_cfg=self.flora_cfg.algo,
+            model_cfg=self.flora_cfg.model,
+            data_cfg=self.flora_cfg.data,
+            log_dir=self.hydra_cfg.runtime.output_dir,
         )
 
     def start(self):
@@ -90,7 +93,7 @@ class Engine(SetupMixin):
 
                 results_futures = []
                 for node in self.topology:
-                    future = node.execute_round.remote(round_idx)
+                    future = node.round_exec.remote(round_idx)
                     results_futures.append(future)
 
                 results = ray.get(results_futures)
