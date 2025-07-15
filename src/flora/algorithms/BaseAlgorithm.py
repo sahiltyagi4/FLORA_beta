@@ -63,18 +63,18 @@ class AggLevel(str, Enum):
 class Algorithm(SetupMixin):
     """
     Base class for federated learning algorithms with hooks-based architecture.
-    
+
     **Required implementations:**
     - `_configure_local_optimizer()`: Return optimizer (e.g., SGD, Adam)
-    - `_train_step()`: Forward pass, return (loss, batch_size) 
+    - `_train_step()`: Forward pass, return (loss, batch_size)
     - `_aggregate()`: Federated aggregation using self.comm
-    
+
     **Optional lifecycle hooks:**
     - `_on_setup()`, `_on_round_start()`, `_on_round_end()` for round lifecycle
-    - `_on_epoch_start()`, `_on_epoch_end()` for epoch lifecycle  
+    - `_on_epoch_start()`, `_on_epoch_end()` for epoch lifecycle
     - `_on_batch_start()`, `_on_batch_end()` for batch lifecycle
     - `_backward_pass()`, `_optimizer_step()` for training customization
-    
+
     **Available infrastructure:**
     `self.metrics`, `self.comm`, `self.local_model`, hyperparameters, and state tracking.
     """
@@ -336,13 +336,24 @@ class Algorithm(SetupMixin):
             )
             # Epoch timing
             epoch_start_time = time.time()
-            self.__epoch_start(epoch_idx)
+            self._epoch_start(epoch_idx)
 
             # Epoch computation
             self.__train_epoch(dataloader, epoch_idx)
 
-            # Overridable epoch end hook
-            self.__epoch_end(epoch_idx)
+            # Framework aggregation logic
+            if self.agg_level == AggLevel.EPOCH:
+                should_agg = self.__should_aggregate()
+                if should_agg:
+                    self._aggregate()
+                else:
+                    print(
+                        f"[AGG-SKIP] E{epoch_idx + 1} | agg_freq={self.agg_freq} | next aggregation at E{((self.epoch_idx // self.agg_freq) + 1) * self.agg_freq + 1}",
+                        flush=True,
+                    )
+
+            # Overridable epoch end hook for algorithm-specific logic
+            self._epoch_end(epoch_idx)
             epoch_time = time.time() - epoch_start_time
 
             self.metrics.update_mean("time/epoch", epoch_time)
@@ -388,8 +399,8 @@ class Algorithm(SetupMixin):
             self.batch_idx = batch_idx
             # Batch timing
             batch_start_time = time.time()
-            # Overridable batch start hook
-            self.__batch_start(batch_idx)
+            # Overridable batch start hook for algorithm-specific logic
+            self._batch_start(batch_idx)
 
             # ---
             # Sample batch and transfer to device
@@ -407,8 +418,19 @@ class Algorithm(SetupMixin):
             compute_time = time.time() - compute_start_time
 
             # ---
-            # Overridable batch end hook
-            self.__batch_end(batch_idx)
+            # Framework aggregation logic
+            if self.agg_level == AggLevel.ITER:
+                should_agg = self.__should_aggregate()
+                if should_agg:
+                    self._aggregate()
+                else:
+                    print(
+                        f"[AGG-SKIP] B{batch_idx + 1} | agg_freq={self.agg_freq} | next aggregation at B{((self.batch_idx // self.agg_freq) + 1) * self.agg_freq + 1}",
+                        flush=True,
+                    )
+
+            # Overridable batch end hook for algorithm-specific logic
+            self._batch_end(batch_idx)
             batch_time = time.time() - batch_start_time
 
             # ---
@@ -534,7 +556,7 @@ class Algorithm(SetupMixin):
 
         Override _round_end() instead of this method.
         """
-        # Framework aggregation logic (always happens when appropriate)
+        # Framework aggregation logic
         if self.agg_level == AggLevel.ROUND:
             should_agg = self.__should_aggregate()
             if should_agg:
@@ -564,16 +586,6 @@ class Algorithm(SetupMixin):
         """
         pass
 
-    def __epoch_start(self, epoch_idx: int) -> None:
-        """
-        Private epoch initialization. Calls _epoch_start() for algorithm-specific setup.
-        """
-        # Framework epoch initialization (currently minimal, but could expand)
-        # Future: epoch-level metrics reset, scheduler steps, etc.
-
-        # Call algorithm-specific epoch start logic
-        self._epoch_start(epoch_idx)
-
     def _epoch_start(self, epoch_idx: int) -> None:
         """
         Algorithm-specific epoch start hook (PROTECTED - override in subclasses).
@@ -589,24 +601,6 @@ class Algorithm(SetupMixin):
                 self.epoch_loss_accumulator = 0.0
         """
         pass
-
-    def __epoch_end(self, epoch_idx: int) -> None:
-        """
-        Private epoch finalization. Handles EPOCH-level aggregation and calls _epoch_end().
-        """
-        # Framework aggregation logic (always happens when appropriate)
-        if self.agg_level == AggLevel.EPOCH:
-            should_agg = self.__should_aggregate()
-            if should_agg:
-                self._aggregate()
-            else:
-                print(
-                    f"[AGG-SKIP] E{epoch_idx + 1} | agg_freq={self.agg_freq} | next aggregation at E{((self.epoch_idx // self.agg_freq) + 1) * self.agg_freq + 1}",
-                    flush=True,
-                )
-
-        # Call algorithm-specific epoch end logic
-        self._epoch_end(epoch_idx)
 
     def _epoch_end(self, epoch_idx: int) -> None:
         """
@@ -624,16 +618,6 @@ class Algorithm(SetupMixin):
         """
         pass
 
-    def __batch_start(self, batch_idx: int) -> None:
-        """
-        Private batch initialization. Calls _batch_start() for algorithm-specific setup.
-        """
-        # Framework batch initialization (currently minimal, but could expand)
-        # Future: batch-level metrics reset, optimizer state tracking, etc.
-
-        # Call algorithm-specific batch start logic
-        self._batch_start(batch_idx)
-
     def _batch_start(self, batch_idx: int) -> None:
         """
         Algorithm-specific batch start hook (PROTECTED - override in subclasses).
@@ -649,24 +633,6 @@ class Algorithm(SetupMixin):
                     self.adjust_learning_rate(batch_idx)
         """
         pass
-
-    def __batch_end(self, batch_idx: int) -> None:
-        """
-        Private batch finalization. Handles ITER-level aggregation and calls _batch_end().
-        """
-        # Framework aggregation logic (always happens when appropriate)
-        if self.agg_level == AggLevel.ITER:
-            should_agg = self.__should_aggregate()
-            if should_agg:
-                self._aggregate()
-            else:
-                print(
-                    f"[AGG-SKIP] B{batch_idx + 1} | agg_freq={self.agg_freq} | next aggregation at B{((self.batch_idx // self.agg_freq) + 1) * self.agg_freq + 1}",
-                    flush=True,
-                )
-
-        # Call algorithm-specific batch end logic
-        self._batch_end(batch_idx)
 
     def _batch_end(self, batch_idx: int) -> None:
         """
