@@ -22,6 +22,7 @@ import torch
 from . import grpc_communicator_pb2
 from . import grpc_communicator_pb2_grpc
 from .protobuf_utils import tensordict_to_proto, proto_to_tensordict
+from .BaseCommunicator import ReductionType
 
 
 @rich.repr.auto
@@ -91,27 +92,47 @@ class CentralServerServicer(grpc_communicator_pb2_grpc.CentralServerServicer):
             aggregated_tensors = {}
 
             with torch.no_grad():
-                for key, tensor in first_data.items():
-                    aggregated_tensors[key] = torch.zeros_like(tensor)
-
-                for client_data in session_state["data"].values():
-                    for key, tensor in client_data.items():
-                        if key in aggregated_tensors:
-                            aggregated_tensors[key] += tensor
                 reduction_type = session_state["reduction_type"]
                 if reduction_type is None:
                     raise ValueError(
                         f"No reduction type set for session {current_session}"
                     )
 
-                match reduction_type:
-                    case "sum":
-                        pass
-                    case "mean":
-                        for key, tensor in aggregated_tensors.items():
+                # Initialize aggregated tensors for each key
+                aggregated_tensors = {}
+
+                if reduction_type == ReductionType.MAX.value:
+                    # MAX reduction: element-wise maximum across all clients
+                    for key, tensor in first_data.items():
+                        all_tensors = [
+                            client_data[key]
+                            for client_data in session_state["data"].values()
+                        ]
+                        aggregated_tensors[key] = torch.max(
+                            torch.stack(all_tensors), dim=0
+                        )[0]
+
+                elif reduction_type in (
+                    ReductionType.SUM.value,
+                    ReductionType.MEAN.value,
+                ):
+                    # SUM/MEAN reduction: sum all client contributions
+                    for key, tensor in first_data.items():
+                        aggregated_tensors[key] = torch.zeros_like(tensor)
+
+                    # Sum all client contributions
+                    for client_data in session_state["data"].values():
+                        for key, tensor in client_data.items():
+                            if key in aggregated_tensors:
+                                aggregated_tensors[key] += tensor
+
+                    # Convert sum to mean if needed
+                    if reduction_type == ReductionType.MEAN.value:
+                        for tensor in aggregated_tensors.values():
                             tensor /= self.world_size
-                    case _:
-                        raise ValueError(f"Unknown reduction type: {reduction_type}")
+
+                else:
+                    raise ValueError(f"Unknown reduction type: {reduction_type}")
 
             session_state["result"] = aggregated_tensors
             session_state["event"].set()
@@ -213,9 +234,7 @@ class CentralServerServicer(grpc_communicator_pb2_grpc.CentralServerServicer):
             print(f"[AGG-READY] Aggregation complete for client {client_id}")
             with self.lock:
                 if session_state["result"] is not None:
-                    print(
-                        f"[AGG-SEND] Sending aggregated model to client {client_id}"
-                    )
+                    print(f"[AGG-SEND] Sending aggregated model to client {client_id}")
                     return self._create_aggregation_result_response(target_session)
             return grpc_communicator_pb2.OperationResponse(is_ready=False)
 

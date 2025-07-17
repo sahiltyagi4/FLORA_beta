@@ -119,21 +119,9 @@ class Node(SetupMixin):
         """
         # role_names = [role.value for role in self.roles]
         # return f"Node {self.id}: {role_names}"
-        return f"{self.id}"
-
-    def should_train(self) -> bool:
-        """
-        Determine if this node should perform training based on its role.
-
-        In centralized topology:
-        - Rank 0 (Server/Aggregator): No training, only aggregation
-        - Rank 1+ (Client/Trainer): Performs local training
-
-        Returns:
-            True if node should train, False if it should skip training
-        """
-        return self.local_rank != 0
-        # return True
+        _time = time.strftime("%H:%M:%S", time.gmtime())
+        # _time = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        return f"{self.id} {_time}"
 
     def _setup(self) -> None:
         """
@@ -147,7 +135,7 @@ class Node(SetupMixin):
         # Initialize communication backend
         self.comm.setup()
 
-        self.algo.setup()
+        self.algo.setup(device=self.device)
         # summary(self.model, verbose=1)
 
     def round_exec(self, round_idx: int) -> dict[str, float]:
@@ -164,44 +152,11 @@ class Node(SetupMixin):
         if not self.is_ready:
             raise RuntimeError(f"Node {self.id} not ready - call setup() first")
 
-        print(f"[ROUND-START] R{round_idx + 1}", flush=True)
-        round_start_time = time.time()
-
-        # Model state before any synchronization
-        metrics: dict[str, float] = dict(round_idx=round_idx)
-
-        # Round Start Logic with automatic tracking
-        self.algo.round_start(round_idx)
-
-        # 4. Local training (only for trainer nodes)
-        if self.should_train():
-            if self.datamodule.train is None:
-                raise ValueError(
-                    "ERROR: Node is configured to train but no training DataLoader is provided."
-                )
-            # Centralized device management: ensure model is on compute device
-            self.algo.local_model.to(self.device)
-
-            # Execute local training round
-            self.algo.train_round(
-                self.datamodule.train,
-                round_idx,
-            )
-        else:
-            print("[NODE-SKIP-TRAIN] Server node - no local training")
-
-        # Round End Logic with automatic tracking
-        self.algo.round_end(round_idx)
-
-        # Collect all metrics from algorithm execution
-        metrics["time/round"] = time.time() - round_start_time
-        metrics.update(self.algo.metrics.to_dict())
-
-        print(
-            f"[ROUND-END] R{round_idx + 1} |",
-            {k: round(v, 2) if isinstance(v, float) else v for k, v in metrics.items()},
-            flush=True,
+        metrics = self.algo.round_exec(
+            self.datamodule,
+            round_idx,
         )
+
         return metrics
 
     @staticmethod

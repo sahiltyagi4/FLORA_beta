@@ -90,15 +90,20 @@ class CentralizedTopology(Topology):
 
             if rank == 0:
                 node_id = f"N{rank}-SERVER"
+                # Create node-specific data config for server (no training data)
+                node_data_cfg = data_cfg.copy()
+                # node_data_cfg = data_cfg
+                node_data_cfg.train = None
             else:
                 node_id = f"N{rank}-Client"  # Purposefully using different casing for log readability
+                node_data_cfg = data_cfg
 
             node = Node.options(**node_rayopts).remote(
                 id=node_id,
                 comm_cfg=comm_cfg,
                 model_cfg=model_cfg,
                 algo_cfg=algo_cfg,
-                data_cfg=data_cfg,
+                data_cfg=node_data_cfg,
                 local_rank=rank,
                 world_size=self.num_nodes,
                 log_dir=os.path.join(log_dir, node_id),

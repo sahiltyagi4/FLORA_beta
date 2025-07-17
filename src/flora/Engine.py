@@ -111,8 +111,8 @@ class Engine(SetupMixin):
                         "total_count": _ct_total,
                     }
                 )
-                print(f"# Round Complete | {summaries[-1]}", flush=True)
                 time.sleep(3)  # Give time for logs to flush
+                print(f"# Round Complete | {summaries[-1]}", flush=True)
 
             utils.log_sep("FL Rounds End", color="blue")
 
@@ -138,5 +138,6 @@ class Engine(SetupMixin):
             utils.console.print(table)
 
         finally:
-            print("Engine shutting down")
+            print("Engine shutting down...", flush=True)
+            time.sleep(3)  # Give time for final logs to flush
             ray.shutdown()

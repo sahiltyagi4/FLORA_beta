@@ -15,10 +15,9 @@
 import logging
 import time
 from abc import ABC, abstractmethod
-from contextlib import contextmanager
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, Optional
 
 import rich.repr
 import torch
@@ -29,10 +28,11 @@ from torch.utils.tensorboard import SummaryWriter
 from ..communicator.BaseCommunicator import Communicator, ReductionType
 from ..communicator.grpc_communicator import GrpcCommunicator
 from ..communicator.TorchDistCommunicator import TorchDistCommunicator
+from ..data.DataModule import DataModule
 from ..helper.RoundMetrics import RoundMetrics
+from ..mixins import SetupMixin
 from . import utils
 from .utils import log_param_changes
-from ..mixins import SetupMixin
 
 # ======================================================================================
 
@@ -56,7 +56,8 @@ class AggLevel(str, Enum):
 
     ROUND = "ROUND"
     EPOCH = "EPOCH"
-    ITER = "ITER"
+    ITER = "ITER"  # Batch-level aggregation
+    # TODO: Maybe add another level based on the number of samples processed?
 
 
 @rich.repr.auto
@@ -79,6 +80,13 @@ class Algorithm(SetupMixin):
     `self.metrics`, `self.comm`, `self.local_model`, hyperparameters, and state tracking.
     """
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if hasattr(cls, "_aggregate"):
+            cls._aggregate = log_param_changes(cls._aggregate)
+        if hasattr(cls, "_setup"):
+            cls._setup = log_param_changes(cls._setup)
+
     def __init__(
         self,
         # Core FL components
@@ -88,10 +96,10 @@ class Algorithm(SetupMixin):
         agg_freq: int,
         # Training hyperparameters
         local_lr: float,
-        max_epochs: int,
+        max_epochs_per_round: int,
         # Infrastructure components
         tb_writer: Optional[SummaryWriter],
-        # Extensibility
+        # Miscellaneous
         **kwargs: Any,
     ):
         """
@@ -114,21 +122,33 @@ class Algorithm(SetupMixin):
         self.agg_freq: int = agg_freq
 
         # Training hyperparameters
+        if local_lr <= 0:
+            raise ValueError(f"local_lr must be positive, got {local_lr}")
+        if max_epochs_per_round <= 0:
+            raise ValueError(f"max_epochs must be positive, got {max_epochs_per_round}")
+        if agg_freq <= 0:
+            raise ValueError(f"agg_freq must be positive, got {agg_freq}")
+
         self.local_lr: float = local_lr
-        self.max_epochs: int = max_epochs
+        self.local_epochs_per_round: int = max_epochs_per_round
 
         # Infrastructure components
         # self.tb_writer: SummaryWriter = tb_writer
         # self.tb_writer: Optional[SummaryWriter] = None
         self.tb_writer = None
 
-        # Initialize state tracking
-        self._local_optimizer: Optional[torch.optim.Optimizer] = None
-        self._metrics: Optional[RoundMetrics] = None
-        self._curr_tr_sample_ct: int = 0
-        self._round_idx: int = 0
-        self._epoch_idx: int = 0
-        self._batch_idx: int = 0
+        # Initialize state
+        self.__round_local_optimizer: Optional[torch.optim.Optimizer] = None
+        self.__round_metrics: Optional[RoundMetrics] = None
+        self.__round_idx: int = 0
+        self.__epoch_idx: int = 0
+        self.__batch_idx: int = 0
+        self.__local_sample_count: int = 0
+
+        # Lazy-initialized distributed training parameters
+        self._local_iters_per_epoch: Optional[int] = None
+        self._global_max_iters_per_epoch: Optional[int] = None
+        self._global_max_epochs_per_round: Optional[int] = None
 
     # =============================================================================
     # PROPERTIES
@@ -136,88 +156,193 @@ class Algorithm(SetupMixin):
 
     @property
     def local_optimizer(self) -> torch.optim.Optimizer:
-        """Current optimizer - created lazily when first accessed."""
-        if self._local_optimizer is None:
-            self._local_optimizer = self._configure_local_optimizer(self.local_lr)
-        return self._local_optimizer
+        """Current optimizer for local training.
+
+        Created during round initialization in __reset_round_state().
+        """
+        if self.__round_local_optimizer is None:
+            raise RuntimeError("local_optimizer accessed before round initialization")
+        return self.__round_local_optimizer
+
+    @local_optimizer.setter
+    def local_optimizer(self, value: torch.optim.Optimizer) -> None:
+        if not isinstance(value, torch.optim.Optimizer):
+            raise ValueError(
+                f"local_optimizer must be torch.optim.Optimizer, got {type(value)}"
+            )
+        self.__round_local_optimizer = value
 
     @property
     def metrics(self) -> RoundMetrics:
-        """Current round metrics - created on first access."""
-        if self._metrics is None:
-            self._metrics = RoundMetrics()
-        return self._metrics
+        """Current round metrics for tracking training statistics.
+
+        Created during round initialization in __reset_round_state().
+        """
+        if self.__round_metrics is None:
+            raise RuntimeError("metrics accessed before round initialization")
+        return self.__round_metrics
+
+    @metrics.setter
+    def metrics(self, value: RoundMetrics) -> None:
+        if not isinstance(value, RoundMetrics):
+            raise ValueError(f"metrics must be RoundMetrics, got {type(value)}")
+        self.__round_metrics = value
 
     @property
     def round_idx(self) -> int:
-        """Current federated round index with validation."""
-        return self._round_idx
+        """Current federated learning round index.
+
+        Tracks which global training round is currently being executed.
+        Must be non-negative. Used for aggregation frequency calculations.
+        """
+        return self.__round_idx
 
     @round_idx.setter
     def round_idx(self, value: int) -> None:
         if value < 0:
             raise ValueError(f"round_idx must be non-negative, got {value}")
-        self._round_idx = value
+        self.__round_idx = value
 
     @property
     def epoch_idx(self) -> int:
-        """Current local epoch index with validation."""
-        return self._epoch_idx
+        """Current local training epoch index within the current round.
+
+        Tracks which epoch is currently being executed in the current round.
+        Must be non-negative. Reset to 0 at the start of each round.
+        """
+        return self.__epoch_idx
 
     @epoch_idx.setter
     def epoch_idx(self, value: int) -> None:
         if value < 0:
             raise ValueError(f"epoch_idx must be non-negative, got {value}")
-        self._epoch_idx = value
+        self.__epoch_idx = value
 
     @property
     def batch_idx(self) -> int:
-        """Current local batch index with validation."""
-        return self._batch_idx
+        """Current batch index within the current epoch.
+
+        Tracks which batch is currently being processed in the current epoch.
+        Must be non-negative. Reset to 0 at the start of each epoch.
+        """
+        return self.__batch_idx
 
     @batch_idx.setter
     def batch_idx(self, value: int) -> None:
         if value < 0:
             raise ValueError(f"batch_idx must be non-negative, got {value}")
-        self._batch_idx = value
+        self.__batch_idx = value
 
     @property
-    def tb_global_step(self) -> int:
-        """Current global step for TensorBoard logging."""
-        return self.round_idx * self.max_epochs + self.epoch_idx
+    def tb_global_epoch(self) -> int:
+        """Global epoch count across all rounds for TensorBoard logging.
+
+        Computed as round_idx * max_epochs + epoch_idx to provide a monotonically
+        increasing epoch count suitable for TensorBoard visualization.
+        """
+        return self.round_idx * self.local_epochs_per_round + self.epoch_idx
 
     @property
     def local_sample_count(self) -> int:
-        """Local samples processed by this node in current round - this node's contribution."""
-        return self._curr_tr_sample_ct
+        """Local samples processed by this node in current round.
+
+        This count represents the number of training samples this node has processed
+        and is used for computing aggregation weights in federated learning.
+
+        Validation rules:
+        - Must be non-negative
+        - Can only be reset to 0 or increased (prevents double-counting)
+        - Reset to 0 at the start of each round
+        """
+        return self.__local_sample_count
 
     @local_sample_count.setter
     def local_sample_count(self, value: int) -> None:
         if value < 0:
-            raise ValueError(f"local_samples must be >= 0 (got {value})")
-        if value == 0:
-            logging.info("NOTE: Local sample count reset to 0.")
-        elif value < self._curr_tr_sample_ct:
+            raise ValueError(f"local_sample_count must be non-negative, got {value}")
+        elif value < self.__local_sample_count and value != 0:
             raise ValueError(
-                f"local_samples can only be reset to 0 or increased (current: {self._curr_tr_sample_ct}, got {value})"
+                f"local_sample_count can only be reset to 0 or increased (current: {self.__local_sample_count}, got {value})"
             )
-        self._curr_tr_sample_ct = value
+        self.__local_sample_count = value
+
+    @property
+    def local_iters_per_epoch(self) -> int:
+        """Number of local iterations per epoch for this node.
+
+        Computed as len(dataloader) for the local DataLoader. This value is used
+        along with global_max_iters_per_epoch to ensure all nodes participate in
+        synchronized training loops, even if they have different amounts of local data.
+
+        Available only after round_exec() begins and distributed parameter discovery
+        completes during __reset_round_state().
+        """
+        if self._local_iters_per_epoch is None:
+            raise RuntimeError(
+                "local_iters_per_epoch accessed before distributed training initialization. "
+                "This value is computed from the local DataLoader and is only available after "
+                "round_exec() begins and distributed parameter discovery completes."
+            )
+        return self._local_iters_per_epoch
+
+    @property
+    def global_max_iters_per_epoch(self) -> int:
+        """Global maximum iterations per epoch across all nodes.
+
+        Computed using MAX reduction across all nodes' local_iters_per_epoch.
+        This value ensures all nodes participate in synchronized training loops
+        for the same number of iterations, preventing nodes with less data from
+        finishing early and causing synchronization issues.
+
+        Requires distributed communication and is only available after round_exec()
+        begins and distributed parameter discovery completes during __reset_round_state().
+        """
+        if self._global_max_iters_per_epoch is None:
+            raise RuntimeError(
+                "global_max_iters_per_epoch accessed before distributed training initialization. "
+                "This value requires communication across all nodes to determine the global maximum "
+                "and is only available after round_exec() begins and distributed parameter discovery completes."
+            )
+        return self._global_max_iters_per_epoch
+
+    @property
+    def global_max_epochs_per_round(self) -> int:
+        """Global maximum epochs per round across all nodes.
+
+        Computed using MAX reduction across all nodes' max_epochs. This value ensures
+        all nodes participate in synchronized training loops for the same number of epochs,
+        maintaining consistency in the federated learning protocol even if nodes have
+        different max_epochs settings.
+
+        Requires distributed communication and is only available after round_exec()
+        begins and distributed parameter discovery completes during __reset_round_state().
+        """
+        if self._global_max_epochs_per_round is None:
+            raise RuntimeError(
+                "global_max_epochs_per_round accessed before distributed training initialization. "
+                "This value requires communication across all nodes to determine the global maximum "
+                "and is only available after round_exec() begins and distributed parameter discovery completes."
+            )
+        return self._global_max_epochs_per_round
 
     # =============================================================================
     # SETUP
     # =============================================================================
 
-    @log_param_changes
-    def _setup(self) -> None:
+    def _setup(self, device: torch.device) -> None:
         """
         Default setup for federated learning algorithms (OPTIONAL override).
 
         Performs standard federated learning initialization:
+        - Moves model to target device
         - Broadcasts initial model from rank 0 to all participants
 
         Override this method if your algorithm needs custom setup behavior.
-        When overriding, ALWAYS call super()._setup() first to ensure
-        the standard model broadcast happens before your custom logic.
+        When overriding, ALWAYS call super()._setup(device) first to ensure
+        the standard model setup happens before your custom logic.
+
+        Args:
+            device: Target device for model placement
 
         Common override use-cases:
         - Initialize algorithm-specific state (control variates, momentum buffers)
@@ -225,14 +350,18 @@ class Algorithm(SetupMixin):
         - Set up auxiliary networks or transformations
 
         Example:
-            def _setup(self) -> None:
-                super()._setup()  # Standard model broadcast
+            def _setup(self, device: torch.device) -> None:
+                super()._setup(device)  # Standard model setup
                 self.global_model = copy.deepcopy(self.local_model)
                 self.momentum_buffers = {name: torch.zeros_like(param)
                                        for name, param in self.local_model.named_parameters()}
         """
+        # Move model to target device (one-time operation)
+        self.local_model = self.local_model.to(device)
+
         # Standard federated learning setup: broadcast initial model from server
         self.local_model = self.comm.broadcast(self.local_model, src=0)
+        # TODO: maybe require this to return the local model or perhaps a whole state object? (should we do the same to aggregate?)
 
     # =============================================================================
     # MINIMAL OVERRIDES
@@ -306,14 +435,36 @@ class Algorithm(SetupMixin):
         pass
 
     # =============================================================================
-    # TRAINING LOGIC
     # =============================================================================
 
-    def train_round(
-        self,
-        dataloader: DataLoader[Any],
-        round_idx: int,
-    ):
+    def __reset_round_state(
+        self, round_idx: int, dataloader: Optional[DataLoader]
+    ) -> None:
+        # Discover distributed training parameters to ensure all nodes participate in the same loop structure
+        self._local_iters_per_epoch = len(dataloader) if dataloader is not None else 0
+
+        # Find global maximum iterations and epochs with single batched collective operation
+        # Combine both MAX reductions to reduce communication overhead
+        discovery_tensor = torch.tensor(
+            [self._local_iters_per_epoch, self.local_epochs_per_round], dtype=torch.int
+        )
+        global_maxes = self.comm.aggregate(discovery_tensor, ReductionType.MAX)
+
+        self._global_max_iters_per_epoch = int(global_maxes[0].item())
+        self._global_max_epochs_per_round = int(global_maxes[1].item())
+
+        # ---
+        # Create new instances for this round
+        self.__round_local_optimizer = self._configure_local_optimizer(self.local_lr)
+        self.__round_metrics = RoundMetrics()
+        # ---
+        self.round_idx = round_idx
+        self.epoch_idx = 0
+        self.batch_idx = 0
+        # ---
+        self.local_sample_count = 0
+
+    def round_exec(self, datamodule: DataModule, round_idx: int) -> dict[str, float]:
         """
         Execute federated round computation across multiple epochs.
 
@@ -325,120 +476,201 @@ class Algorithm(SetupMixin):
         - Learning rate schedules: step schedulers between epochs
         - Cross-epoch state: maintain state across epochs (e.g., momentum buffers)
         """
-        self.local_model.train()
+        # Future: could select datamodule.val or datamodule.test based on phase
+        dataloader = datamodule.train
 
-        for epoch_idx in range(self.max_epochs):
-            # Update current epoch index
-            self.epoch_idx = epoch_idx
-            print(
-                f"[EPOCH-START] R{round_idx + 1} E{epoch_idx + 1}",
-                flush=True,
-            )
-            # Epoch timing
-            epoch_start_time = time.time()
-            self._epoch_start(epoch_idx)
+        _t_start = time.time()
+        self.__reset_round_state(round_idx, dataloader)
 
-            # Epoch computation
-            self.__train_epoch(dataloader, epoch_idx)
+        print(
+            f"[START] Round {round_idx + 1} | "
+            f"global_max_epochs_per_round={self.global_max_epochs_per_round} | "
+            f"global_max_iters_per_epoch={self.global_max_iters_per_epoch}",
+            flush=True,
+        )
+        # Overridable hook for algorithm-specific logic
+        self._round_start(round_idx)
 
-            # Framework aggregation logic
-            if self.agg_level == AggLevel.EPOCH:
-                should_agg = self.__should_aggregate()
-                if should_agg:
-                    self._aggregate()
-                else:
-                    print(
-                        f"[AGG-SKIP] E{epoch_idx + 1} | agg_freq={self.agg_freq} | next aggregation at E{((self.epoch_idx // self.agg_freq) + 1) * self.agg_freq + 1}",
-                        flush=True,
-                    )
+        # ---
+        # All nodes enter synchronized epoch loop structure
+        self.local_model.train()  # Future: .eval() for val/test
 
-            # Overridable epoch end hook for algorithm-specific logic
-            self._epoch_end(epoch_idx)
-            epoch_time = time.time() - epoch_start_time
-
-            self.metrics.update_mean("time/epoch", epoch_time)
-
-            print(
-                f"[EPOCH-END] R{round_idx + 1} E{epoch_idx + 1} |",
-                {
-                    k: round(v, 4)
-                    if isinstance(v, float) and k.startswith("time/")
-                    else round(v, 2)
-                    if isinstance(v, float)
-                    else v
-                    for k, v in self.metrics.to_dict().items()
-                },
-                flush=True,
+        for epoch_idx in range(self.global_max_epochs_per_round):
+            self.__run_epoch(
+                epoch_idx,
+                dataloader,
             )
 
-            # Log epoch metrics to TensorBoard
-            if self.tb_writer:
-                for key, value in self.metrics.to_dict().items():
-                    self.tb_writer.add_scalar(key, value, self.tb_global_step)
+        # ---
+        # Check if aggregation should occur based on level & frequency
+        if self.agg_level == AggLevel.ROUND:
+            if self.round_idx % self.agg_freq == 0:
+                self._aggregate()
+            else:
+                next_agg = ((self.round_idx // self.agg_freq) + 1) * self.agg_freq + 1
+                print(
+                    f"[AGG-SKIP] round={self.round_idx + 1} freq={self.agg_freq} next={next_agg}",
+                    flush=True,
+                )
 
-    def __train_epoch(
+        # Overridable hook for algorithm-specific logic
+        self._round_end(round_idx)
+        _t_end = time.time()
+        self.metrics.update_mean("time/round", _t_end - _t_start)
+
+        print(
+            f"[END] Round {self.round_idx + 1} |",
+            {
+                k: round(v, 4)
+                if isinstance(v, float) and k.startswith("time/")
+                else round(v, 2)
+                if isinstance(v, float)
+                else v
+                for k, v in self.metrics.to_dict().items()
+            },
+            flush=True,
+        )
+
+        return self.metrics.to_dict()
+
+    def __run_epoch(
         self,
-        dataloader: DataLoader[Any],
         epoch_idx: int,
+        dataloader: Optional[DataLoader],
     ) -> None:
         """
-        Execute computation for all batches in a single epoch.
-
-        DEFAULT: Sequential batch processing with automatic device transfer and timing.
-
-        Override Use-Cases:
-        - Gradient accumulation: accumulate gradients over multiple batches before optimizer step
-        - Custom sampling: dynamic batch selection or weighted sampling
-        - Multi-dataloader: alternate between multiple data sources
-        - Batch preprocessing: custom transformations before device transfer
+        PRIVATE internal method to run a single epoch.
         """
-        data_iter = iter(dataloader)
+        self.epoch_idx = epoch_idx
 
-        for batch_idx in range(len(dataloader)):
-            # Update current batch index
+        print(
+            f"[START] Round {self.round_idx + 1} Epoch {epoch_idx + 1}",
+            flush=True,
+        )
+
+        _t_epoch_start = time.time()
+
+        # Overridable hook for algorithm-specific logic
+        self._epoch_start(epoch_idx)
+
+        # Initialize dataloader iterator for sequential batch processing
+        dataloader_iter = iter(dataloader) if dataloader is not None else None
+
+        # All nodes participate in synchronized batch loop
+        for batch_idx in range(self.global_max_iters_per_epoch):
+            # Set batch index and start batch processing
             self.batch_idx = batch_idx
-            # Batch timing
-            batch_start_time = time.time()
-            # Overridable batch start hook for algorithm-specific logic
+            _t_batch_start = time.time()
+            # Overridable hook for algorithm-specific logic
             self._batch_start(batch_idx)
 
-            # ---
-            # Sample batch and transfer to device
-            data_start_time = time.time()
-            batch = self._transfer_batch_to_device(
-                next(data_iter),
-                next(self.local_model.parameters()).device,
-            )
-            data_time = time.time() - data_start_time
+            # Data preparation: fetch and transfer batch
+            batch = None
+            _t_batch_data_start = time.time()
+            if (
+                dataloader_iter is not None
+                and self.epoch_idx < self.local_epochs_per_round
+            ):
+                try:
+                    batch = next(dataloader_iter)
+                    batch = self._transfer_batch_to_device(
+                        batch, next(self.local_model.parameters()).device
+                    )
+                except StopIteration:
+                    # Node has exhausted its data - continue with None batch for synchronization
+                    pass
+            _t_batch_data_end = time.time()
 
-            # ---
-            # Batch computation
-            compute_start_time = time.time()
-            self.__train_batch(batch, batch_idx)
-            compute_time = time.time() - compute_start_time
+            # Execute batch computation
+            _t_batch_compute_start = time.time()
+            if batch is not None:
+                self._batch_exec(batch, batch_idx)
+            _t_batch_compute_end = time.time()
 
-            # ---
-            # Framework aggregation logic
+            # Batch-level aggregation
             if self.agg_level == AggLevel.ITER:
-                should_agg = self.__should_aggregate()
-                if should_agg:
+                if self.batch_idx % self.agg_freq == 0:
                     self._aggregate()
                 else:
+                    next_agg = (
+                        (self.batch_idx // self.agg_freq) + 1
+                    ) * self.agg_freq + 1
                     print(
-                        f"[AGG-SKIP] B{batch_idx + 1} | agg_freq={self.agg_freq} | next aggregation at B{((self.batch_idx // self.agg_freq) + 1) * self.agg_freq + 1}",
+                        f"[AGG-SKIP] iter={self.batch_idx + 1} freq={self.agg_freq} next={next_agg}",
                         flush=True,
                     )
 
-            # Overridable batch end hook for algorithm-specific logic
+            # Overridable hook for algorithm-specific logic
             self._batch_end(batch_idx)
-            batch_time = time.time() - batch_start_time
 
-            # ---
-            self.metrics.update_mean("time/step_data", data_time)
-            self.metrics.update_mean("time/step_compute", compute_time)
-            self.metrics.update_mean("time/step", batch_time)
+            # Update timing metrics
+            _t_batch_end = time.time()
 
-    def __train_batch(self, batch: Any, batch_idx: int) -> None:
+            self.metrics.update_mean(
+                "time/step_data", _t_batch_data_end - _t_batch_data_start
+            )
+            self.metrics.update_mean(
+                "time/step_compute", _t_batch_compute_end - _t_batch_compute_start
+            )
+
+            # Overall batch timing for all nodes
+            self.metrics.update_mean("time/step", _t_batch_end - _t_batch_start)
+
+        # ---
+        # Epoch boundary synchronization
+        print("[EPOCH-SYNC-START]", flush=True)
+        _t_start = time.time()
+        sync_signal = torch.tensor([1.0])
+        total_signals = self.comm.aggregate(sync_signal, ReductionType.SUM)
+        sync_time = time.time() - _t_start
+        print(
+            f"[EPOCH-SYNC-END] time={sync_time:.4f}s signals={int(total_signals.item())}",
+            flush=True,
+        )
+
+        # Epoch-level aggregation
+        if self.agg_level == AggLevel.EPOCH:
+            if self.epoch_idx % self.agg_freq == 0:
+                print(
+                    f"[AGG-START] epoch={self.epoch_idx + 1} samples={self.local_sample_count}",
+                    flush=True,
+                )
+                _t_start = time.time()
+                self._aggregate()
+                agg_time = time.time() - _t_start
+                print(f"[AGG-END] time={agg_time:.4f}s", flush=True)
+            else:
+                next_agg = ((self.epoch_idx // self.agg_freq) + 1) * self.agg_freq + 1
+                print(
+                    f"[AGG-SKIP] epoch={self.epoch_idx + 1} freq={self.agg_freq} next={next_agg}",
+                    flush=True,
+                )
+
+        # Overridable hook for algorithm-specific logic
+        self._epoch_end(epoch_idx)
+        _t_epoch_end = time.time()
+
+        self.metrics.update_mean("time/epoch", _t_epoch_end - _t_epoch_start)
+
+        print(
+            f"[END] Round {self.round_idx + 1} Epoch {epoch_idx + 1} |",
+            {
+                k: round(v, 4)
+                if isinstance(v, float) and k.startswith("time/")
+                else round(v, 2)
+                if isinstance(v, float)
+                else v
+                for k, v in self.metrics.to_dict().items()
+            },
+            flush=True,
+        )
+
+        # Log epoch metrics to TensorBoard
+        if self.tb_writer:
+            for key, value in self.metrics.to_dict().items():
+                self.tb_writer.add_scalar(key, value, self.tb_global_epoch)
+
+    def _batch_exec(self, batch: Any, batch_idx: int) -> None:
         """
         Execute computation for a single batch.
 
@@ -452,11 +684,11 @@ class Algorithm(SetupMixin):
         loss, batch_size = self._train_step(batch, batch_idx)
         # Automatic sample tracking
         self.local_sample_count = self.local_sample_count + batch_size
-        self.metrics.update_sum("train/num_samples", batch_size)
-        self.metrics.update_sum("train/num_batches", 1)
+        self.metrics.update_sum("local/sample_count", batch_size)
+        self.metrics.update_sum("local/batch_count", 1)
 
         # Automatic loss tracking
-        self.metrics.update_mean("train/loss", loss.detach().item(), batch_size)
+        self.metrics.update_mean("local/loss", loss.detach().item(), batch_size)
 
         self.local_optimizer.zero_grad()
         # Backward pass hook
@@ -464,7 +696,7 @@ class Algorithm(SetupMixin):
 
         # Automatic gradient tracking
         self.metrics.update_mean(
-            "train/grad_norm", utils.get_grad_norm(self.local_model)
+            "local/grad_norm", utils.get_grad_norm(self.local_model)
         )
 
         # Optimizer step hook
@@ -501,74 +733,14 @@ class Algorithm(SetupMixin):
         self.local_optimizer.step()
 
     # =============================================================================
-    # INTERNAL LOGIC
-    # =============================================================================
-
-    def __should_aggregate(self):
-        match self.agg_level:
-            case AggLevel.ROUND:
-                return self.round_idx % self.agg_freq == 0
-            case AggLevel.EPOCH:
-                return self.epoch_idx % self.agg_freq == 0
-            case AggLevel.ITER:
-                return self.batch_idx % self.agg_freq == 0
-            case _:
-                raise ValueError(f"Invalid coord_level: {self.agg_level}")
-
-    # =============================================================================
     # LIFECYCLE HOOKS
     # =============================================================================
-
-    @log_param_changes
-    def round_start(self, round_idx: int) -> None:
-        """
-        Initialize a new federated round by resetting framework state and calling algorithm-specific setup.
-
-        Automatically resets optimizer, metrics, and indices, then calls _round_start() for
-        algorithm-specific initialization like model synchronization.
-
-        Override _round_start() instead of this method.
-        """
-        # Framework state reset (always happens, can't be forgotten by algorithms)
-        self._local_optimizer = None
-        self._metrics = None
-        self.round_idx = round_idx
-        self.epoch_idx = 0
-        self.batch_idx = 0
-        self.local_sample_count = 0
-
-        # Call algorithm-specific round start logic
-        self._round_start(round_idx)
 
     def _round_start(self, round_idx: int) -> None:
         """
         Algorithm-specific round start hook. Override for model sync and state reset.
         """
         pass
-
-    @log_param_changes
-    def round_end(self, round_idx: int) -> None:
-        """
-        Finalize federated round by handling aggregation and calling algorithm-specific cleanup.
-
-        Automatically handles ROUND-level aggregation, then calls _round_end() for
-        algorithm-specific finalization.
-
-        Override _round_end() instead of this method.
-        """
-        # Framework aggregation logic
-        if self.agg_level == AggLevel.ROUND:
-            should_agg = self.__should_aggregate()
-            if should_agg:
-                self._aggregate()
-            else:
-                print(
-                    f"[AGG-SKIP] R{round_idx + 1} | agg_freq={self.agg_freq} | next aggregation at R{((self.round_idx // self.agg_freq) + 1) * self.agg_freq + 1}",
-                    flush=True,
-                )
-
-        # Call algorithm-specific round end logic
-        self._round_end(round_idx)
 
     def _round_end(self, round_idx: int) -> None:
         """

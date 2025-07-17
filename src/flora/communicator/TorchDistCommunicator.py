@@ -47,7 +47,7 @@ class TorchDistCommunicator(Communicator):
         backend: str = "gloo",
         sharedfile: str = "sharedfile",
         timeout: int = 30,
-        max_retries: int = 3,
+        max_retries: int = 5,
     ):
         super().__init__()
         print(
@@ -175,41 +175,47 @@ class TorchDistCommunicator(Communicator):
         """
         Aggregate message across all ranks using all-reduce operations.
 
-        Performs distributed summation or averaging of tensors/models.
+        Performs distributed summation, averaging, or max operations on tensors/models.
         Algorithms are responsible for any pre-scaling or weighting.
 
         Args:
             msg: Model, tensor dict, or tensor to aggregate
-            reduction: SUM or MEAN reduction operation
+            reduction: SUM, MEAN, or MAX reduction operation
         Returns:
             Aggregated message
         """
-        print(f"[COMM-AGG] {type(msg).__name__} | reduction: {reduction.value}")
+
+        print(
+            f"[COMM-AGG] {type(msg).__name__} | reduction={reduction} | info={self.get_msg_info(msg)}"
+        )
+
+        # Map reduction type to PyTorch operation
+        reduction_ops = {
+            ReductionType.SUM: dist.ReduceOp.SUM,
+            ReductionType.MEAN: dist.ReduceOp.AVG,
+            ReductionType.MAX: dist.ReduceOp.MAX,
+        }
+
+        if reduction not in reduction_ops:
+            raise ValueError(f"Unsupported reduction type: {reduction}")
+
+        op = reduction_ops[reduction]
 
         if isinstance(msg, nn.Module):
             for _, p in msg.named_parameters():
                 if not p.requires_grad:
                     continue
                 tensor = p.data
-                dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
-                # TODO: would it be equivalent to just use dist.ReduceOp.AVG here?
-                if reduction == ReductionType.MEAN:
-                    tensor.div_(self.world_size)
+                dist.all_reduce(tensor, op=op)
 
         elif isinstance(msg, dict):
             # Handle tensor dictionaries
             for tensor in msg.values():
-                dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
-                # TODO: would it be equivalent to just use dist.ReduceOp.AVG here?
-                if reduction == ReductionType.MEAN:
-                    tensor.div_(self.world_size)
+                dist.all_reduce(tensor, op=op)
 
         else:
             # Handle single tensors
-            dist.all_reduce(msg, op=dist.ReduceOp.SUM)
-            # TODO: would it be equivalent to just use dist.ReduceOp.AVG here?
-            if reduction == ReductionType.MEAN:
-                msg.div_(self.world_size)
+            dist.all_reduce(msg, op=op)
 
         return msg
 

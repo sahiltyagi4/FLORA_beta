@@ -45,7 +45,7 @@ comm: ??? # Mandatory marker; composer must override this value
 algo:
   _target_: src.flora.algorithms.FedAvgNew
   local_lr: 0.01
-  max_epochs: 1
+  max_epochs_per_round: 1
   agg_freq: 1
   agg_level: ROUND
 

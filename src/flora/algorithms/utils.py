@@ -15,7 +15,9 @@
 import copy
 import hashlib
 import logging
+import math
 import time
+import warnings
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from enum import Enum
@@ -324,15 +326,40 @@ def log_param_changes(func: Callable[..., Any]) -> Callable[..., Any]:
         before_norm = get_param_norm(algo.local_model)
         before_hash = hash_model_params(algo.local_model)
 
+        # Fatal check: model must have valid parameters before operation
+        if before_norm == 0.0:
+            raise RuntimeError(
+                f"Model has zero parameter norm before {phase}(). All parameters are zero."
+            )
+        if math.isnan(before_norm) or math.isinf(before_norm):
+            raise RuntimeError(
+                f"Model has invalid parameter norm before {phase}(). Contains NaN or Inf values."
+            )
+
         # Execute the original function
         result = func(algo, *args, **kwargs)
 
         after_norm = get_param_norm(algo.local_model)
         after_hash = hash_model_params(algo.local_model)
 
-        # Log everything
         delta = after_norm - before_norm
         changed = before_hash != after_hash
+
+        print(
+            f"[{phase.upper()}] local_model hash: {before_hash[:8]} → {after_hash[:8]} | "
+            f"norm: {before_norm:.4f} → {after_norm:.4f} (Δ={delta:.6f}) | "
+            f"{'CHANGED' if changed else 'UNCHANGED'}"
+        )
+
+        # Fatal check: operation must not break the model
+        if after_norm == 0.0:
+            raise RuntimeError(
+                f"Operation {phase}() zeroed all model parameters. Norm became 0.0."
+            )
+        if math.isnan(after_norm) or math.isinf(after_norm):
+            raise RuntimeError(
+                f"Operation {phase}() caused numerical instability. Norm is now NaN or Inf."
+            )
 
         if algo.tb_writer:
             algo.tb_writer.add_scalar(
@@ -345,11 +372,30 @@ def log_param_changes(func: Callable[..., Any]) -> Callable[..., Any]:
                 f"param_norm/{phase}_delta", delta, algo.tb_global_step
             )
 
-        print(
-            f"[{phase.upper()}] hash: {before_hash[:8]} → {after_hash[:8]} | "
-            f"norm: {before_norm:.4f} → {after_norm:.4f} (Δ={delta:.6f}) | "
-            f"{'CHANGED' if changed else 'UNCHANGED'}"
-        )
+        # Non-fatal warnings for concerning patterns
+        if phase == "_aggregate" and not changed:
+            warnings.warn(
+                f"Aggregation operation {phase}() completed but parameters unchanged. "
+                f"No model updates occurred. "
+                f"Check if nodes have training data and aggregation weights are non-zero.",
+                UserWarning,
+            )
+
+        if after_norm > before_norm * 10:
+            warnings.warn(
+                f"Parameter norm explosion in {phase}(). "
+                f"Increased {after_norm / before_norm:.1f}x from {before_norm:.4f} to {after_norm:.4f}. "
+                f"Consider reducing learning rate or adding gradient clipping.",
+                UserWarning,
+            )
+
+        if after_norm < before_norm * 0.1:
+            warnings.warn(
+                f"Parameter norm vanishing in {phase}(). "
+                f"Decreased {before_norm / after_norm:.1f}x from {before_norm:.4f} to {after_norm:.4f}. "
+                f"Check for gradient vanishing, excessive regularization, or incorrect scaling.",
+                UserWarning,
+            )
 
         return result
 

@@ -46,7 +46,7 @@ class GrpcCommunicator(Communicator):
         aggregation_timeout: float = 600,  # Seconds for server to wait for all clients
         client_timeout: float = 60,  # Seconds for clients to wait for aggregation result
         retry_delay: float = 5.0,  # Seconds between retries
-        max_retries: int = 3,  # Maximum retry attempts
+        max_retries: int = 5,  # Maximum retry attempts
         **kwargs,
     ):
         super().__init__()
@@ -161,14 +161,9 @@ class GrpcCommunicator(Communicator):
         # Extract tensors and perform aggregation
         tensordict = self._extract_tensordict_from_msg(msg)
 
-        if self.is_server:
-            print(
-                f"[AGG-SERVER] {type(msg).__name__} | {len(tensordict)} tensors | {reduction.value}"
-            )
-        else:
-            print(
-                f"[AGG-CLIENT] {type(msg).__name__} | {len(tensordict)} tensors | {reduction.value}"
-            )
+        print(
+            f"[COMM-AGG] {type(msg).__name__} | {len(tensordict)} tensors | reduction={reduction} | info={self.get_msg_info(msg)}"
+        )
 
         aggregated_tensordict = self._grpc_aggregate(tensordict, reduction)
 
