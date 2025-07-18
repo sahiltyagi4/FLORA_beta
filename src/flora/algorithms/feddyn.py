@@ -153,11 +153,11 @@ class FedDynNew(Algorithm):
                 UserWarning,
             )
 
-    def _setup(self) -> None:
+    def _setup(self, device: torch.device) -> None:
         """
         FedDyn-specific setup: initialize server momentum.
         """
-        super()._setup()
+        super()._setup(device=device)
 
         self.server_momentum: Dict[str, torch.Tensor] = {}
         for name, param in self.local_model.named_parameters():
@@ -170,7 +170,7 @@ class FedDynNew(Algorithm):
         """
         return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any) -> tuple[torch.Tensor, int]:
         """
         Perform a forward pass and compute the FedDyn loss for a single batch.
         """
@@ -216,7 +216,7 @@ class FedDynNew(Algorithm):
                 local_model_params[name] = param.data.clone()
 
         # Aggregate local sample counts to compute federation total
-        global_samples = self.comm.aggregate(
+        global_samples = self.local_comm.aggregate(
             torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
@@ -232,7 +232,7 @@ class FedDynNew(Algorithm):
         utils.scale_params(self.local_model, data_proportion)
 
         # Aggregate weighted model parameters
-        aggregated_model = self.comm.aggregate(
+        aggregated_model = self.local_comm.aggregate(
             self.local_model,
             reduction=ReductionType.SUM,
         )

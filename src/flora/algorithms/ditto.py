@@ -149,11 +149,11 @@ class DittoNew(Algorithm):
         self.global_lr = global_lr
         self.ditto_lambda = ditto_lambda
 
-    def _setup(self) -> None:
+    def _setup(self, device: torch.device) -> None:
         """
         Ditto-specific setup: initialize global model and optimizer.
         """
-        super()._setup()
+        super()._setup(device=device)
 
         self.global_model = copy.deepcopy(self.local_model)
         self.global_optimizer = torch.optim.SGD(
@@ -166,7 +166,7 @@ class DittoNew(Algorithm):
         """
         return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any) -> tuple[torch.Tensor, int]:
         """
         Perform dual training: update both global model and personal model.
         """
@@ -196,7 +196,7 @@ class DittoNew(Algorithm):
 
         return total_loss, batch_size
 
-    def _round_start(self, round_idx: int) -> None:
+    def _round_start(self) -> None:
         """
         Synchronize the global model at the start of each round.
 
@@ -205,7 +205,7 @@ class DittoNew(Algorithm):
         # TODO: check whether we can safely just move all this logic in round_start() for all algorithms to the end of aggregate() method and remove round_start() overrides altogether
         # TODO: should this logic be linked with the same granularity as aggregate(), rather than always on round_start?
         """
-        self.global_model = self.comm.broadcast(self.global_model, src=0)
+        self.global_model = self.local_comm.broadcast(self.global_model, src=0)
 
     def _aggregate(self) -> None:
         """
@@ -215,7 +215,7 @@ class DittoNew(Algorithm):
         - Only global models are aggregated using standard weighted averaging, while personal models remain untouched.
         """
         # Aggregate local sample counts to compute federation total
-        global_samples = self.comm.aggregate(
+        global_samples = self.local_comm.aggregate(
             torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
@@ -231,7 +231,7 @@ class DittoNew(Algorithm):
         utils.scale_params(self.global_model, data_proportion)
 
         # Aggregate global models (personal models remain local)
-        self.global_model = self.comm.aggregate(
+        self.global_model = self.local_comm.aggregate(
             self.global_model,
             reduction=ReductionType.SUM,
         )

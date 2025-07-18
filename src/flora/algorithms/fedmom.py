@@ -160,11 +160,11 @@ class FedMomNew(Algorithm):
                 UserWarning,
             )
 
-    def _setup(self) -> None:
+    def _setup(self, device: torch.device) -> None:
         """
         FedMom-specific setup: initialize global model and velocity buffers.
         """
-        super()._setup()
+        super()._setup(device=device)
 
         self.global_model = copy.deepcopy(self.local_model)
 
@@ -180,7 +180,10 @@ class FedMomNew(Algorithm):
         """
         return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def _train_step(self, batch: Any, batch_idx: int) -> Tuple[torch.Tensor, int]:
+    def _train_step(
+        self,
+        batch: Any,
+    ) -> Tuple[torch.Tensor, int]:
         """
         Perform a forward pass and compute the loss for a single batch.
         """
@@ -189,7 +192,7 @@ class FedMomNew(Algorithm):
         loss = torch.nn.functional.cross_entropy(outputs, targets)
         return loss, inputs.size(0)
 
-    def _round_start(self, round_idx: int) -> None:
+    def _round_start(self) -> None:
         """
         Update global model reference at the start of each round.
 
@@ -217,7 +220,7 @@ class FedMomNew(Algorithm):
 
         # Aggregate local sample counts to compute federation total
 
-        global_samples = self.comm.aggregate(
+        global_samples = self.local_comm.aggregate(
             torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
@@ -234,7 +237,7 @@ class FedMomNew(Algorithm):
             local_deltas[name].mul_(data_proportion)
 
         # Aggregate scaled deltas
-        aggregated_deltas = self.comm.aggregate(
+        aggregated_deltas = self.local_comm.aggregate(
             local_deltas,
             reduction=ReductionType.SUM,
         )

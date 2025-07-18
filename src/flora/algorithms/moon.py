@@ -218,7 +218,7 @@ class MOONNew(Algorithm):
         self.temperature = temperature
         self.num_prev_models = num_prev_models
 
-    def _setup(self) -> None:
+    def _setup(self, device: torch.device) -> None:
         """
         MOON-specific setup: wrap model and initialize global model and previous models.
         """
@@ -226,7 +226,7 @@ class MOONNew(Algorithm):
             wrapped_initial = MOONWrapper(self.local_model)
             self.local_model = wrapped_initial
 
-        super()._setup()
+        super()._setup(device=device)
 
         self.global_model = copy.deepcopy(self.local_model)
         self.global_model.eval()
@@ -238,7 +238,7 @@ class MOONNew(Algorithm):
         """
         return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any) -> tuple[torch.Tensor, int]:
         """
         Forward pass and compute the MOON loss for a single batch, including contrastive loss.
         """
@@ -294,7 +294,7 @@ class MOONNew(Algorithm):
 
         return total_loss, inputs.size(0)
 
-    def _round_start(self, round_idx: int) -> None:
+    def _round_start(self) -> None:
         """
         Update global model reference and set to eval mode at the start of each round.
 
@@ -315,7 +315,7 @@ class MOONNew(Algorithm):
         """
         # Aggregate local sample counts to compute federation total
 
-        global_samples = self.comm.aggregate(
+        global_samples = self.local_comm.aggregate(
             torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
@@ -332,7 +332,7 @@ class MOONNew(Algorithm):
 
         # Aggregate scaled models
         # NOTE: This aggregate() call returns the updated global model, so the local_model is now the aggregated global model
-        self.local_model = self.comm.aggregate(
+        self.local_model = self.local_comm.aggregate(
             self.local_model,
             reduction=ReductionType.SUM,
         )

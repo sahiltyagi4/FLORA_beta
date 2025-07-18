@@ -141,7 +141,7 @@ class FedBNNew(Algorithm):
         """
         return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any) -> tuple[torch.Tensor, int]:
         """
         Perform a forward pass and compute the loss for a single batch.
         """
@@ -164,7 +164,7 @@ class FedBNNew(Algorithm):
                 local_bn_params[name] = param.data.clone()
 
         # Aggregate local sample counts to compute federation total
-        global_samples = self.comm.aggregate(
+        global_samples = self.local_comm.aggregate(
             torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
@@ -182,7 +182,7 @@ class FedBNNew(Algorithm):
                 param.data.mul_(data_proportion)
 
         # Aggregate non-BN parameters
-        self.local_model = self.comm.aggregate(
+        self.local_model = self.local_comm.aggregate(
             self.local_model,
             reduction=ReductionType.SUM,
         )

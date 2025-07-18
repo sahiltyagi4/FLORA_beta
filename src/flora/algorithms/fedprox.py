@@ -120,11 +120,11 @@ class FedProxNew(Algorithm):
         super().__init__(**kwargs)
         self.mu = mu
 
-    def _setup(self) -> None:
+    def _setup(self, device: torch.device) -> None:
         """
         FedProx-specific setup: initialize global model for proximal term.
         """
-        super()._setup()
+        super()._setup(device=device)
 
         self.global_model = copy.deepcopy(self.local_model)
 
@@ -134,7 +134,7 @@ class FedProxNew(Algorithm):
         """
         return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any) -> tuple[torch.Tensor, int]:
         """
         Forward pass and compute the FedProx loss for a single batch.
         """
@@ -152,7 +152,7 @@ class FedProxNew(Algorithm):
         loss += (self.mu / 2) * prox_term
         return loss, inputs.size(0)
 
-    def _round_start(self, round_idx: int) -> None:
+    def _round_start(self) -> None:
         """
         Update the reference global model at the start of each round.
 
@@ -169,7 +169,7 @@ class FedProxNew(Algorithm):
         NOTE: Compatible with all granularity levels.
         """
         # Aggregate local sample counts to compute federation total
-        global_samples = self.comm.aggregate(
+        global_samples = self.local_comm.aggregate(
             torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
@@ -186,7 +186,7 @@ class FedProxNew(Algorithm):
 
         # Aggregate weighted model parameters from all clients
         # NOTE: This aggregate() call returns the updated global model, so the local_model is now the aggregated global model
-        self.local_model = self.comm.aggregate(
+        self.local_model = self.local_comm.aggregate(
             self.local_model,
             reduction=ReductionType.SUM,
         )

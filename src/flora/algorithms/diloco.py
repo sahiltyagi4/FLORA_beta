@@ -162,11 +162,11 @@ class DiLoCoNew(Algorithm):
         self.outer_momentum = outer_momentum
         self.inner_steps = inner_steps
 
-    def _setup(self) -> None:
+    def _setup(self, device: torch.device) -> None:
         """
         DiLoCo-specific setup: initialize global model and velocity.
         """
-        super()._setup()
+        super()._setup(device=device)
 
         self.global_model = copy.deepcopy(self.local_model)
         self.velocity: Dict[str, torch.Tensor] = {}
@@ -180,7 +180,7 @@ class DiLoCoNew(Algorithm):
         """
         return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any) -> tuple[torch.Tensor, int]:
         """
         Forward pass and compute cross-entropy loss for a batch.
         """
@@ -189,7 +189,7 @@ class DiLoCoNew(Algorithm):
         loss = torch.nn.functional.cross_entropy(outputs, targets)
         return loss, inputs.size(0)
 
-    def _round_start(self, round_idx: int) -> None:
+    def _round_start(self) -> None:
         """
         Update global model reference at the start of each round.
 
@@ -214,7 +214,7 @@ class DiLoCoNew(Algorithm):
                 local_deltas[name] = param.data - global_param.data
 
         # DiLoCo uses mean aggregation rather than weighted aggregation
-        aggregated_deltas = self.comm.aggregate(
+        aggregated_deltas = self.local_comm.aggregate(
             msg=local_deltas,
             reduction=ReductionType.MEAN,
         )

@@ -116,7 +116,7 @@ class Algorithm(SetupMixin):
             **kwargs: Additional algorithm-specific parameters
         """
         # Core federated learning components
-        self.comm: Communicator = comm
+        self.local_comm: Communicator = comm
         self.local_model: nn.Module = local_model
         self.agg_level: AggLevel = agg_level
         self.agg_freq: int = agg_freq
@@ -166,10 +166,6 @@ class Algorithm(SetupMixin):
 
     @local_optimizer.setter
     def local_optimizer(self, value: torch.optim.Optimizer) -> None:
-        if not isinstance(value, torch.optim.Optimizer):
-            raise ValueError(
-                f"local_optimizer must be torch.optim.Optimizer, got {type(value)}"
-            )
         self.__round_local_optimizer = value
 
     @property
@@ -184,8 +180,6 @@ class Algorithm(SetupMixin):
 
     @metrics.setter
     def metrics(self, value: RoundMetrics) -> None:
-        if not isinstance(value, RoundMetrics):
-            raise ValueError(f"metrics must be RoundMetrics, got {type(value)}")
         self.__round_metrics = value
 
     @property
@@ -249,7 +243,6 @@ class Algorithm(SetupMixin):
         This count represents the number of training samples this node has processed
         and is used for computing aggregation weights in federated learning.
 
-        Validation rules:
         - Must be non-negative
         - Can only be reset to 0 or increased (prevents double-counting)
         - Reset to 0 at the start of each round
@@ -360,7 +353,7 @@ class Algorithm(SetupMixin):
         self.local_model = self.local_model.to(device)
 
         # Standard federated learning setup: broadcast initial model from server
-        self.local_model = self.comm.broadcast(self.local_model, src=0)
+        self.local_model = self.local_comm.broadcast(self.local_model, src=0)
         # TODO: maybe require this to return the local model or perhaps a whole state object? (should we do the same to aggregate?)
 
     # =============================================================================
@@ -387,7 +380,7 @@ class Algorithm(SetupMixin):
         pass
 
     @abstractmethod
-    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any) -> tuple[torch.Tensor, int]:
         """
         Compute loss for a single batch (REQUIRED override).
 
@@ -397,7 +390,6 @@ class Algorithm(SetupMixin):
 
         Args:
             batch: Single batch from DataLoader (already on device)
-            batch_idx: Current batch index within epoch
 
         Returns:
             loss: Scalar tensor for backward pass
@@ -448,7 +440,7 @@ class Algorithm(SetupMixin):
         discovery_tensor = torch.tensor(
             [self._local_iters_per_epoch, self.local_epochs_per_round], dtype=torch.int
         )
-        global_maxes = self.comm.aggregate(discovery_tensor, ReductionType.MAX)
+        global_maxes = self.local_comm.aggregate(discovery_tensor, ReductionType.MAX)
 
         self._global_max_iters_per_epoch = int(global_maxes[0].item())
         self._global_max_epochs_per_round = int(global_maxes[1].item())
@@ -489,7 +481,7 @@ class Algorithm(SetupMixin):
             flush=True,
         )
         # Overridable hook for algorithm-specific logic
-        self._round_start(round_idx)
+        self._round_start()
 
         # ---
         # All nodes enter synchronized epoch loop structure
@@ -514,7 +506,7 @@ class Algorithm(SetupMixin):
                 )
 
         # Overridable hook for algorithm-specific logic
-        self._round_end(round_idx)
+        self._round_end()
         _t_end = time.time()
         self.metrics.update_mean("time/round", _t_end - _t_start)
 
@@ -551,10 +543,10 @@ class Algorithm(SetupMixin):
         _t_epoch_start = time.time()
 
         # Overridable hook for algorithm-specific logic
-        self._epoch_start(epoch_idx)
+        self._epoch_start()
 
         # Initialize dataloader iterator for sequential batch processing
-        dataloader_iter = iter(dataloader) if dataloader is not None else None
+        dataloader_iter = iter(dataloader or [])
 
         # All nodes participate in synchronized batch loop
         for batch_idx in range(self.global_max_iters_per_epoch):
@@ -562,15 +554,12 @@ class Algorithm(SetupMixin):
             self.batch_idx = batch_idx
             _t_batch_start = time.time()
             # Overridable hook for algorithm-specific logic
-            self._batch_start(batch_idx)
+            self._batch_start()
 
             # Data preparation: fetch and transfer batch
             batch = None
             _t_batch_data_start = time.time()
-            if (
-                dataloader_iter is not None
-                and self.epoch_idx < self.local_epochs_per_round
-            ):
+            if self.epoch_idx < self.local_epochs_per_round:
                 try:
                     batch = next(dataloader_iter)
                     batch = self._transfer_batch_to_device(
@@ -584,7 +573,7 @@ class Algorithm(SetupMixin):
             # Execute batch computation
             _t_batch_compute_start = time.time()
             if batch is not None:
-                self._batch_exec(batch, batch_idx)
+                self._train_batch(batch)
             _t_batch_compute_end = time.time()
 
             # Batch-level aggregation
@@ -601,7 +590,7 @@ class Algorithm(SetupMixin):
                     )
 
             # Overridable hook for algorithm-specific logic
-            self._batch_end(batch_idx)
+            self._batch_end()
 
             # Update timing metrics
             _t_batch_end = time.time()
@@ -621,7 +610,7 @@ class Algorithm(SetupMixin):
         print("[EPOCH-SYNC-START]", flush=True)
         _t_start = time.time()
         sync_signal = torch.tensor([1.0])
-        total_signals = self.comm.aggregate(sync_signal, ReductionType.SUM)
+        total_signals = self.local_comm.aggregate(sync_signal, ReductionType.SUM)
         sync_time = time.time() - _t_start
         print(
             f"[EPOCH-SYNC-END] time={sync_time:.4f}s signals={int(total_signals.item())}",
@@ -647,7 +636,7 @@ class Algorithm(SetupMixin):
                 )
 
         # Overridable hook for algorithm-specific logic
-        self._epoch_end(epoch_idx)
+        self._epoch_end()
         _t_epoch_end = time.time()
 
         self.metrics.update_mean("time/epoch", _t_epoch_end - _t_epoch_start)
@@ -670,7 +659,7 @@ class Algorithm(SetupMixin):
             for key, value in self.metrics.to_dict().items():
                 self.tb_writer.add_scalar(key, value, self.tb_global_epoch)
 
-    def _batch_exec(self, batch: Any, batch_idx: int) -> None:
+    def _train_batch(self, batch: Any) -> None:
         """
         Execute computation for a single batch.
 
@@ -681,7 +670,7 @@ class Algorithm(SetupMixin):
         - Gradient clipping: apply gradient norm clipping before _optimizer_step
         """
         # Forward pass hook (implemented by subclasses)
-        loss, batch_size = self._train_step(batch, batch_idx)
+        loss, batch_size = self._train_step(batch)
         # Automatic sample tracking
         self.local_sample_count = self.local_sample_count + batch_size
         self.metrics.update_sum("local/sample_count", batch_size)
@@ -692,7 +681,7 @@ class Algorithm(SetupMixin):
 
         self.local_optimizer.zero_grad()
         # Backward pass hook
-        self._backward_pass(loss, batch_idx)
+        self._backward_pass(loss)
 
         # Automatic gradient tracking
         self.metrics.update_mean(
@@ -700,11 +689,11 @@ class Algorithm(SetupMixin):
         )
 
         # Optimizer step hook
-        self._optimizer_step(batch_idx)
+        self._optimizer_step()
 
     # =============================================================================
 
-    def _backward_pass(self, loss: torch.Tensor, batch_idx: int) -> None:
+    def _backward_pass(self, loss: torch.Tensor) -> None:
         """
         Compute gradients from loss tensor.
         PROTECTED hook - can override in subclasses.
@@ -718,7 +707,7 @@ class Algorithm(SetupMixin):
         """
         loss.backward()
 
-    def _optimizer_step(self, batch_idx: int) -> None:
+    def _optimizer_step(self) -> None:
         """
         Apply parameter updates using computed gradients.
         PROTECTED hook - override in subclasses.
@@ -736,13 +725,13 @@ class Algorithm(SetupMixin):
     # LIFECYCLE HOOKS
     # =============================================================================
 
-    def _round_start(self, round_idx: int) -> None:
+    def _round_start(self) -> None:
         """
         Algorithm-specific round start hook. Override for model sync and state reset.
         """
         pass
 
-    def _round_end(self, round_idx: int) -> None:
+    def _round_end(self) -> None:
         """
         Algorithm-specific round end hook (PROTECTED - override in subclasses).
 
@@ -752,13 +741,13 @@ class Algorithm(SetupMixin):
         - Round metrics collection: algorithm-specific statistics gathering
 
         Example:
-            def _round_end(self, round_idx: int) -> None:
+            def _round_end(self) -> None:
                 self.compute_algorithm_metrics()
                 self.save_round_checkpoint()
         """
         pass
 
-    def _epoch_start(self, epoch_idx: int) -> None:
+    def _epoch_start(self) -> None:
         """
         Algorithm-specific epoch start hook (PROTECTED - override in subclasses).
 
@@ -768,13 +757,13 @@ class Algorithm(SetupMixin):
         - Dynamic configuration: adjust dropout rates or data augmentation per epoch
 
         Example:
-            def _epoch_start(self, epoch_idx: int) -> None:
+            def _epoch_start(self) -> None:
                 self.scheduler.step()
                 self.epoch_loss_accumulator = 0.0
         """
         pass
 
-    def _epoch_end(self, epoch_idx: int) -> None:
+    def _epoch_end(self) -> None:
         """
         Algorithm-specific epoch end hook (PROTECTED - override in subclasses).
 
@@ -784,13 +773,13 @@ class Algorithm(SetupMixin):
         - Early stopping: check local convergence criteria
 
         Example:
-            def _epoch_end(self, epoch_idx: int) -> None:
+            def _epoch_end(self) -> None:
                 val_loss = self.validate_local_model()
                 self.metrics.update("validation/loss", val_loss)
         """
         pass
 
-    def _batch_start(self, batch_idx: int) -> None:
+    def _batch_start(self) -> None:
         """
         Algorithm-specific batch start hook (PROTECTED - override in subclasses).
 
@@ -800,13 +789,13 @@ class Algorithm(SetupMixin):
         - Debug logging: log batch indices or data samples for debugging
 
         Example:
-            def _batch_start(self, batch_idx: int) -> None:
-                if batch_idx % 100 == 0:
-                    self.adjust_learning_rate(batch_idx)
+            def _batch_start(self) -> None:
+                if self.batch_idx % 100 == 0:
+                    self.adjust_learning_rate(self.batch_idx)
         """
         pass
 
-    def _batch_end(self, batch_idx: int) -> None:
+    def _batch_end(self) -> None:
         """
         Algorithm-specific batch end hook (PROTECTED - override in subclasses).
 
@@ -816,9 +805,9 @@ class Algorithm(SetupMixin):
         - Progress tracking: update training progress indicators
 
         Example:
-            def _batch_end(self, batch_idx: int) -> None:
-                if batch_idx % 50 == 0:
-                    self.log_batch_metrics(batch_idx)
+            def _batch_end(self) -> None:
+                if self.batch_idx % 50 == 0:
+                    self.log_batch_metrics(self.batch_idx)
                 torch.cuda.empty_cache()  # Memory cleanup
         """
         pass

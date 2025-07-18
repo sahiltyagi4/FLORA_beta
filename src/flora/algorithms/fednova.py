@@ -163,11 +163,11 @@ class FedNovaNew(Algorithm):
         super().__init__(**kwargs)
         self.weight_decay = weight_decay
 
-    def _setup(self) -> None:
+    def _setup(self, device: torch.device) -> None:
         """
         FedNova-specific setup: initialize global model and step counter.
         """
-        super()._setup()
+        super()._setup(device=device)
 
         self.global_model = copy.deepcopy(self.local_model)
         self.local_steps_this_round: int = 0
@@ -180,7 +180,7 @@ class FedNovaNew(Algorithm):
             self.local_model.parameters(), lr=local_lr, weight_decay=self.weight_decay
         )
 
-    def _train_step(self, batch: Any, batch_idx: int) -> tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any) -> tuple[torch.Tensor, int]:
         """
         Perform a forward pass and compute cross-entropy loss for a batch.
         """
@@ -189,7 +189,7 @@ class FedNovaNew(Algorithm):
         loss = torch.nn.functional.cross_entropy(outputs, targets)
         return loss, inputs.size(0)
 
-    def _round_start(self, round_idx: int) -> None:
+    def _round_start(self) -> None:
         """
         Update global model reference and reset step counter at the start of each round.
 
@@ -201,7 +201,7 @@ class FedNovaNew(Algorithm):
         # Reset local step counter for normalization calculations
         self.local_steps_this_round = 0
 
-    def _optimizer_step(self, batch_idx: int) -> None:
+    def _optimizer_step(self) -> None:
         """
         Perform an optimizer step and increment the local step counter for normalization.
         """
@@ -240,7 +240,7 @@ class FedNovaNew(Algorithm):
 
         # Aggregate local sample counts to compute federation total
 
-        global_samples = self.comm.aggregate(
+        global_samples = self.local_comm.aggregate(
             torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
@@ -257,7 +257,7 @@ class FedNovaNew(Algorithm):
             delta.mul_(data_proportion)
 
         # Aggregate normalized deltas
-        aggregated_deltas = self.comm.aggregate(
+        aggregated_deltas = self.local_comm.aggregate(
             msg=normalized_deltas,
             reduction=ReductionType.SUM,
         )

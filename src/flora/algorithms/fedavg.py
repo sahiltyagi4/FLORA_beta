@@ -126,7 +126,7 @@ class FedAvgNew(Algorithm):
         """
         return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def _train_step(self, batch: Any, batch_idx: int) -> Tuple[torch.Tensor, int]:
+    def _train_step(self, batch: Any) -> Tuple[torch.Tensor, int]:
         """
         Forward pass and compute the cross-entropy loss for a batch.
         """
@@ -142,7 +142,7 @@ class FedAvgNew(Algorithm):
         """
 
         # Aggregate local sample counts to compute federation total
-        global_samples = self.comm.aggregate(
+        global_samples = self.local_comm.aggregate(
             torch.tensor([self.local_sample_count], dtype=torch.float32),
             reduction=ReductionType.SUM,
         ).item()
@@ -159,7 +159,7 @@ class FedAvgNew(Algorithm):
 
         # Aggregate models across all clients
         # NOTE: This aggregate() call returns the updated global model, so the local_model is now the aggregated global model
-        self.local_model = self.comm.aggregate(
+        self.local_model = self.local_comm.aggregate(
             self.local_model,
             reduction=ReductionType.SUM,
         )

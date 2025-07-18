@@ -192,11 +192,11 @@ class ScaffoldNew(Algorithm):
                 f"counter and control variate calculations across batches."
             )
 
-    def _setup(self) -> None:
+    def _setup(self, device: torch.device) -> None:
         """
         SCAFFOLD-specific setup: initialize control variates and tracking structures.
         """
-        super()._setup()
+        super()._setup(device=device)
 
         self.server_cv = {}
         self.client_cv = {}
@@ -219,7 +219,10 @@ class ScaffoldNew(Algorithm):
         """
         return torch.optim.SGD(self.local_model.parameters(), lr=local_lr)
 
-    def _train_step(self, batch: Any, batch_idx: int) -> Tuple[torch.Tensor, int]:
+    def _train_step(
+        self,
+        batch: Any,
+    ) -> Tuple[torch.Tensor, int]:
         """
         Forward pass and compute cross-entropy loss for a batch.
         """
@@ -228,14 +231,14 @@ class ScaffoldNew(Algorithm):
         loss = torch.nn.functional.cross_entropy(outputs, targets)
         return loss, inputs.size(0)
 
-    def _optimizer_step(self, batch_idx: int) -> None:
+    def _optimizer_step(self) -> None:
         """
         Track optimizer steps for control variate normalization.
         """
         self.local_optimizer.step()
         self.optimizer_steps += 1
 
-    def _round_start(self, round_idx: int) -> None:
+    def _round_start(self) -> None:
         """
         Reset optimizer step count and update global model reference at the start of each round.
 
@@ -247,7 +250,7 @@ class ScaffoldNew(Algorithm):
         # Reset optimizer step counter for SCAFFOLD control variate calculations
         self.optimizer_steps = 0
 
-    def _backward_pass(self, loss: torch.Tensor, batch_idx: int) -> None:
+    def _backward_pass(self, loss: torch.Tensor) -> None:
         """
         Apply SCAFFOLD gradient correction after backward pass.
         """
@@ -289,10 +292,10 @@ class ScaffoldNew(Algorithm):
             )
 
         # SCAFFOLD uses mean aggregation rather than weighted aggregation
-        aggregated_model_deltas = self.comm.aggregate(
+        aggregated_model_deltas = self.local_comm.aggregate(
             msg=self.model_delta, reduction=ReductionType.MEAN
         )
-        aggregated_cv_deltas = self.comm.aggregate(
+        aggregated_cv_deltas = self.local_comm.aggregate(
             msg=self.cv_delta, reduction=ReductionType.MEAN
         )
 
