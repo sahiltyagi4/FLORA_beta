@@ -14,3 +14,4 @@
 
 from .BaseTopology import Topology
 from .CentralizedTopology import CentralizedTopology
+from .MultiGroupTopology import MultiGroupTopology

@@ -49,16 +49,18 @@ class CentralizedTopology(Topology):
         """
         super().__init__()
         self.num_clients: int = num_clients
-        self.num_nodes: int = num_clients + 1  # 1 server + N clients
         self.init_delay: float = init_delay
 
     def create_nodes(
         self,
-        comm_cfg: DictConfig,
+        local_comm_cfg: DictConfig,
+        global_comm_cfg: DictConfig | None,
         algo_cfg: DictConfig,
         model_cfg: DictConfig,
         data_cfg: DictConfig,
         log_dir: str,
+        node_rayopts: Dict[str, Any] = {},
+        **kwargs: Any,
     ) -> List[Node]:
         """
         Create nodes for centralized topology.
@@ -67,45 +69,62 @@ class CentralizedTopology(Topology):
         - Rank 0: Aggregator (no training data, coordinates aggregation)
         - Ranks 1+: Trainers (training data, perform local training)
 
-        Returns:
-            List of configured nodes
+        The global_comm_cfg parameter allows MultiGroupTopology to provide
+        additional communication configuration for specific nodes.
         """
-        print(
-            f"[TOPOLOGY-CREATE] Creating {self.num_clients} clients + 1 server = {self.num_nodes} total nodes",
-            flush=True,
-        )
+        total_nodes: int = self.num_clients + 1  # 1 server + N clients
+        # Request GPU resources if available
+        if torch.cuda.is_available():
+            node_rayopts.setdefault("num_gpus", 1.0 / total_nodes)
 
         nodes: List[Node] = []
 
         # ----------------------------------------------------------------
         # INIT ALL NODES
 
-        for rank in range(self.num_nodes):
+        for rank in range(total_nodes):
             # Configure Ray actor options
-            node_rayopts: Dict[str, Any] = {}
 
-            # Request GPU resources if available, but don't assign specific devices here
-            if torch.cuda.is_available():
-                node_rayopts["num_gpus"] = 1.0 / self.num_nodes
+            # Create communicator configs with injected rank and world_size
+            # We need to create a new DictConfig to avoid struct mode issues
+            node_local_comm_cfg = DictConfig(
+                {
+                    **local_comm_cfg,
+                    "rank": rank,
+                    "world_size": total_nodes,
+                }
+            )
+
+            # Generate node ID from communicator configs
+            if global_comm_cfg is not None:
+                global_rank = global_comm_cfg["rank"]
+                node_id_base = f"G{global_rank}L{rank}"
+            else:
+                node_id_base = f"L{rank}"
 
             if rank == 0:
-                node_id = f"N{rank}-SERVER"
+                node_id = f"{node_id_base}-SERVER"
                 # Create node-specific data config for server (no training data)
                 node_data_cfg = data_cfg.copy()
                 # node_data_cfg = data_cfg
                 node_data_cfg.train = None
+                # Only server gets global_comm_cfg for inter-group communication
+                node_global_comm_cfg = global_comm_cfg
             else:
-                node_id = f"N{rank}-Client"  # Purposefully using different casing for log readability
+                node_id = f"{node_id_base}-Client"  # Purposefully using different casing for log readability
                 node_data_cfg = data_cfg
+                # Clients don't participate in inter-group communication
+                node_global_comm_cfg = None
 
-            node = Node.options(**node_rayopts).remote(
+            node = Node.options(
+                **node_rayopts
+            ).remote(
                 id=node_id,
-                comm_cfg=comm_cfg,
-                model_cfg=model_cfg,
+                local_comm_cfg=node_local_comm_cfg,  # CentralizedTopology uses local_comm as primary communication
+                global_comm_cfg=node_global_comm_cfg,  # Only servers get global_comm for inter-group aggregation
                 algo_cfg=algo_cfg,
+                model_cfg=model_cfg,
                 data_cfg=node_data_cfg,
-                local_rank=rank,
-                world_size=self.num_nodes,
                 log_dir=os.path.join(log_dir, node_id),
             )
 
@@ -114,11 +133,5 @@ class CentralizedTopology(Topology):
             # Add simulated delay between node initializations
             time.sleep(self.init_delay)
 
-        # ----------------------------------------------------------------
-        # SETUP ALL NODES (PARALLEL)
-
-        # Start all setups simultaneously to avoid TorchDist coordination deadlock
-        setup_futures = [node.setup.remote() for node in nodes]
-        ray.get(setup_futures)
-
+        # Nodes are returned without setup
         return nodes

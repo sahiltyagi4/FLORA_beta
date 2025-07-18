@@ -68,13 +68,18 @@ class Engine(SetupMixin):
             # namespace="federated_learning",
         )
 
+        # Create all nodes through topology
         self.topology.setup(
-            comm_cfg=self.flora_cfg.comm,
+            local_comm_cfg=self.flora_cfg.local_comm,
+            global_comm_cfg=self.flora_cfg.global_comm,
             algo_cfg=self.flora_cfg.algo,
             model_cfg=self.flora_cfg.model,
             data_cfg=self.flora_cfg.data,
             log_dir=self.hydra_cfg.runtime.output_dir,
         )
+
+        setup_futures = [node.setup.remote() for node in self.topology]
+        ray.get(setup_futures)
 
     def start(self):
         """

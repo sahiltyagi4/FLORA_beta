@@ -90,33 +90,35 @@ class Algorithm(SetupMixin):
     def __init__(
         self,
         # Core FL components
-        comm: Communicator,
+        local_comm: Communicator,
+        global_comm: Communicator | None,
         local_model: nn.Module,
         agg_level: AggLevel,
         agg_freq: int,
         # Training hyperparameters
         local_lr: float,
         max_epochs_per_round: int,
-        # Infrastructure components
-        tb_writer: Optional[SummaryWriter],
         # Miscellaneous
+        tb_writer: Optional[SummaryWriter],
         **kwargs: Any,
     ):
         """
         Initialize the Algorithm instance.
 
         Args:
-            comm: Communicator for distributed operations
+            local_comm: Communicator for intra-group operations (e.g., TorchDist)
             local_model: The neural network model for this algorithm instance
             agg_level: Level at which aggregation occurs (ROUND, EPOCH, or ITER)
             agg_freq: Frequency of aggregation operations
             local_lr: Learning rate for local training
-            max_epochs: Maximum number of epochs per round
+            max_epochs_per_round: Maximum number of epochs per round
+            global_comm: Optional communicator for inter-group operations (e.g., gRPC)
             tb_writer: TensorBoard writer for logging metrics
             **kwargs: Additional algorithm-specific parameters
         """
         # Core federated learning components
-        self.local_comm: Communicator = comm
+        self.local_comm: Communicator = local_comm
+        self.global_comm: Communicator | None = global_comm
         self.local_model: nn.Module = local_model
         self.agg_level: AggLevel = agg_level
         self.agg_freq: int = agg_freq
@@ -409,22 +411,58 @@ class Algorithm(SetupMixin):
         Coordinate model updates across clients (REQUIRED override).
 
         This method is called after local training when aggregation should occur
-        (controlled by agg_level and agg_freq). Use self.comm for communication.
+        (controlled by agg_level and agg_freq). Use self.local_comm for communication.
 
         Common patterns:
-        - FedAvg: self.local_model = self.comm.aggregate(self.local_model, ReductionType.MEAN)
+        - FedAvg: self.local_model = self.local_comm.aggregate(self.local_model, ReductionType.MEAN)
         - Custom: Aggregate gradients, apply server-side optimization, broadcast result
 
         Available communication operations:
-        - self.comm.aggregate(model, ReductionType.MEAN/SUM): All-reduce aggregation
-        - self.comm.broadcast(model, src=0): Broadcast from specific rank
-        - self.comm.all_gather(tensors): Gather tensors from all ranks
+        - self.local_comm.aggregate(model, ReductionType.MEAN/SUM): All-reduce aggregation
+        - self.local_comm.broadcast(model, src=0): Broadcast from specific rank
+        - self.local_comm.all_gather(tensors): Gather tensors from all ranks
 
         Example:
             # Simple FedAvg aggregation
-            self.local_model = self.comm.aggregate(self.local_model, ReductionType.MEAN)
+            self.local_model = self.local_comm.aggregate(self.local_model, ReductionType.MEAN)
         """
         pass
+
+    def _perform_aggregation(self) -> None:
+        """
+        Handle aggregation for both single-group and multi-group scenarios.
+
+        For standard centralized topologies, this simply calls the algorithm's
+        _aggregate() method. For multi-group deployments, it orchestrates
+        local aggregation followed by global coordination when needed.
+
+        Nodes with global_comm participate in cross-group aggregation after
+        completing their local group aggregation. The global result is then
+        broadcast back to local group members.
+        """
+        # All nodes: aggregate within their local group
+        self._aggregate()
+
+        # Group servers only: coordinate across groups then share results locally
+        if self.global_comm is not None:
+            print("[GLOBAL-AGG-START] Server performing inter-group aggregation", flush=True)
+
+            # Exchange models with other group servers
+            self.local_model = self.global_comm.aggregate(
+                self.local_model,
+                reduction=ReductionType.SUM,
+            )
+
+            # Share global result with local group members
+            self.local_model = self.local_comm.broadcast(
+                self.local_model,
+                src=0,
+            )
+
+            print(
+                "[GLOBAL-AGG-END] Global model broadcast to local clients",
+                flush=True,
+            )
 
     # =============================================================================
     # =============================================================================
@@ -497,7 +535,7 @@ class Algorithm(SetupMixin):
         # Check if aggregation should occur based on level & frequency
         if self.agg_level == AggLevel.ROUND:
             if self.round_idx % self.agg_freq == 0:
-                self._aggregate()
+                self._perform_aggregation()
             else:
                 next_agg = ((self.round_idx // self.agg_freq) + 1) * self.agg_freq + 1
                 print(
@@ -579,7 +617,7 @@ class Algorithm(SetupMixin):
             # Batch-level aggregation
             if self.agg_level == AggLevel.ITER:
                 if self.batch_idx % self.agg_freq == 0:
-                    self._aggregate()
+                    self._perform_aggregation()
                 else:
                     next_agg = (
                         (self.batch_idx // self.agg_freq) + 1
@@ -625,7 +663,7 @@ class Algorithm(SetupMixin):
                     flush=True,
                 )
                 _t_start = time.time()
-                self._aggregate()
+                self._perform_aggregation()
                 agg_time = time.time() - _t_start
                 print(f"[AGG-END] time={agg_time:.4f}s", flush=True)
             else:

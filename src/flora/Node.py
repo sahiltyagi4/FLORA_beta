@@ -13,8 +13,7 @@
 # limitations under the License.
 
 import time
-from enum import Enum
-from typing import Any, Optional, Set
+from typing import Any, Optional
 
 import ray
 import torch
@@ -66,12 +65,11 @@ class Node(SetupMixin):
         self,
         id: str,
         # roles: Set[NodeRole],
-        comm_cfg: DictConfig,
+        local_comm_cfg: DictConfig,
+        global_comm_cfg: DictConfig | None,  # For inter-group communication
         algo_cfg: DictConfig,
         model_cfg: DictConfig,
         data_cfg: DictConfig,
-        local_rank: int,
-        world_size: int,
         log_dir: str,
         device: str = "auto",
         **kwargs: Any,
@@ -81,17 +79,18 @@ class Node(SetupMixin):
         self.id: str = id
         # self.roles: Set[NodeRole] = roles
 
-        # Distributed computing context
-        self.local_rank: Optional[int] = local_rank
-        self.world_size: Optional[int] = world_size
-        self.device: torch.device = self.select_device(device, rank=local_rank)
-
         # Communication backend instantiation
-        self.comm: Communicator = instantiate(
-            comm_cfg,
-            local_rank=local_rank,
-            world_size=world_size,
+        self.local_comm: Communicator = instantiate(local_comm_cfg)
+
+        # Extract rank information from local communicator for device selection and other uses
+        self.device: torch.device = self.select_device(
+            device, rank=getattr(self.local_comm, "rank", None)
         )
+
+        # Global communicator for inter-group coordination (optional)
+        self.global_comm: Optional[Communicator] = None
+        if global_comm_cfg is not None:
+            self.global_comm = instantiate(global_comm_cfg)
 
         # PyTorch model
         self.local_model: nn.Module = instantiate(model_cfg)
@@ -105,7 +104,8 @@ class Node(SetupMixin):
         # Federated learning algorithm
         self.algo: Algorithm = instantiate(
             algo_cfg,
-            comm=self.comm,
+            local_comm=self.local_comm,
+            global_comm=self.global_comm,
             local_model=self.local_model,
             tb_writer=None,
         )
@@ -125,16 +125,18 @@ class Node(SetupMixin):
 
     def _setup(self) -> None:
         """
-        Initialize node dependencies and prepare for federated learning execution.
-
-        Sets up communication backend and prepares all components for distributed training.
-        Called once before federated learning begins.
+        Setup node with device assignment and algorithm initialization.
         """
-        print("[NODE-SETUP]", flush=True)
+        print(f"[NODE-SETUP] Device: {self.device}", flush=True)
 
-        # Initialize communication backend
-        self.comm.setup()
+        # Setup primary communicator
+        self.local_comm.setup()
 
+        # Setup global communicator if present
+        if self.global_comm is not None:
+            self.global_comm.setup()
+
+        # Setup algorithm
         self.algo.setup(device=self.device)
         # summary(self.model, verbose=1)
 

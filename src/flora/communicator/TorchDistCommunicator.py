@@ -38,7 +38,7 @@ class TorchDistCommunicator(Communicator):
 
     def __init__(
         self,
-        local_rank: int,
+        rank: int,
         world_size: int,
         init_method: str = "tcp",
         # group_name: str = "default",
@@ -51,10 +51,10 @@ class TorchDistCommunicator(Communicator):
     ):
         super().__init__()
         print(
-            f"[COMM-INIT] rank={local_rank}/{world_size} | backend={backend} | addr={master_addr}:{master_port}"
+            f"[COMM-INIT] rank={rank}/{world_size} | backend={backend} | addr={master_addr}:{master_port}"
         )
 
-        self.local_rank: int = local_rank
+        self.rank: int = rank
         self.world_size: int = world_size
         self.init_method: str = init_method
         # self.group_name = group_name
@@ -118,7 +118,7 @@ class TorchDistCommunicator(Communicator):
         """
 
         print(
-            f"[COMM-SETUP] rank={self.local_rank}/{self.world_size} | {self.init_method} | backend={self.backend}"
+            f"[COMM-SETUP] rank={self.rank}/{self.world_size} | {self.init_method} | backend={self.backend}"
         )
 
         if self.init_method == "tcp":
@@ -126,7 +126,7 @@ class TorchDistCommunicator(Communicator):
             dist.init_process_group(
                 backend=self.backend,
                 init_method=addr,
-                rank=self.local_rank,
+                rank=self.rank,
                 world_size=self.world_size,
                 timeout=self.timeout,
             )
@@ -135,7 +135,7 @@ class TorchDistCommunicator(Communicator):
             dist.init_process_group(
                 backend=self.backend,
                 init_method=addr,
-                rank=self.local_rank,
+                rank=self.rank,
                 world_size=self.world_size,
             )
 

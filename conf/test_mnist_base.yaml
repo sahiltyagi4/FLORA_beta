@@ -12,7 +12,6 @@
 defaults:
   - model: simple_cnn
   - data: mnist
-  - topology: centralized
   - _self_
 
 # ───────────── Model Config
@@ -33,12 +32,12 @@ data: # overrides the default mnist datamodule
 
 # ───────────── Topology and Communication Config
 
-topology: # overrides the default centralized topology
-  num_clients: 2 # 2 clients + 1 server = 3 total nodes
+topology: ??? # Mandatory marker; composer must override this value
 
 # ───────────── Communication Config
 
-comm: ??? # Mandatory marker; composer must override this value
+local_comm: ??? # Mandatory marker; composer must override this value
+global_comm: ??? # Mandatory marker; composer must override this value
 
 # ───────────── FL Algorithm Config
 
@@ -51,7 +50,7 @@ algo:
 
 # ───────────── FL Engine Config
 
-global_rounds: 3
+global_rounds: 2
 
 # ───────────── Hydra Config
 

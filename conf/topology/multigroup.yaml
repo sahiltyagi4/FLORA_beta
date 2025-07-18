@@ -1,0 +1,5 @@
+# ./conf/topology/multigroup.yaml
+
+_target_: src.flora.topology.MultiGroupTopology
+
+groups: ??? # Must be overridden with list of CentralizedTopology configurations

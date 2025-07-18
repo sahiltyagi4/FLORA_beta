@@ -36,7 +36,7 @@ class GrpcCommunicator(Communicator):
 
     def __init__(
         self,
-        local_rank: int,
+        rank: int,
         world_size: int,
         master_addr: str = "127.0.0.1",
         master_port: int = 50051,
@@ -51,10 +51,10 @@ class GrpcCommunicator(Communicator):
     ):
         super().__init__()
         print(
-            f"[COMM-INIT] rank={local_rank}/{world_size} | addr={master_addr}:{master_port}"
+            f"[COMM-INIT] rank={rank}/{world_size} | addr={master_addr}:{master_port}"
         )
 
-        self.local_rank: int = local_rank
+        self.rank: int = rank
         self.world_size: int = world_size
 
         self.master_addr: str = master_addr
@@ -99,7 +99,7 @@ class GrpcCommunicator(Communicator):
     @property
     def is_server(self) -> bool:
         """True if rank 0 (server)."""
-        return self.local_rank == 0
+        return self.rank == 0
 
     def _setup(self):
         """Initialize gRPC server or client based on rank."""
@@ -126,7 +126,7 @@ class GrpcCommunicator(Communicator):
             self._server.start()
         else:
             self._client = GrpcClient(
-                client_id=str(self.local_rank),
+                client_id=str(self.rank),
                 master_addr=self.master_addr,
                 master_port=self.master_port,
                 max_send_message_length=self.max_send_message_length,

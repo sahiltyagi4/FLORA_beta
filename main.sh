@@ -39,7 +39,7 @@ python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. ./src/flora/c
 
 # Run the main script
 # NOTE: additional arguments passed to the `main.sh` script are forwarded to the Python script
-python -u main.py --config-name test_mnist_torchdist "$@"
+python -u main.py "$@"
 
 # python -u main.py --config-name test_mnist_grpc "$@"
 
