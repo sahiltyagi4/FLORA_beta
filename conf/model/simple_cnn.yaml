@@ -1,17 +1,42 @@
-# ./conf/model/simple_cnn.yaml
-
-# Defines a generic, reusable CNN architecture blueprint.
+# ------------------------------------------------------------------------------
+# SIMPLE CNN MODEL CONFIG: Generic CNN architecture for FLORA models
+#
+# COMPOSITION FLOW:
+# 1. This config defines a composable CNN model with backbone and head components
+# 2. Uses ComposableModel as the main model class with component composition
+# 3. SimpleCNNBackbone provides feature extraction with configurable conv layers
+# 4. ClassificationHead provides final classification layer
+# 5. Required fields (in_channels, num_classes) must be overridden by inheriting configs
+#
+# ARCHITECTURE PATTERN: backbone → head (feature extraction → classification)
+# ------------------------------------------------------------------------------
 
 _target_: src.flora.models.ComposableModel
 
+# ─────────────
+
+# CNN BACKBONE CONFIGURATION
+# Feature extraction component with convolutional layers
 backbone:
   _target_: src.flora.models.SimpleCNNBackbone
-  in_channels: ??? # Mandatory marker; composer must override this value
-  conv_channels: [32, 64]
-  kernel_sizes: 3
-  paddings: 1
+  
+  # Required fields - must be overridden by each model config
+  in_channels: ??? # REQUIRED: Input channels (1 for grayscale, 3 for RGB)
+  
+  # Optional fields with defaults - can be overridden by inheriting configs
+  conv_channels: [32, 64] # Channel progression through conv layers
+  kernel_sizes: 3 # Convolution kernel size (int or list)
+  paddings: 1 # Padding for conv layers (int or list)
 
+# ─────────────
+
+# CLASSIFICATION HEAD CONFIGURATION
+# Final classification component
 head:
   _target_: src.flora.models.ClassificationHead
-  in_channels: 64
-  num_classes: ??? # Mandatory marker; composer must override this value
+  
+  # Fixed fields based on backbone configuration
+  in_channels: 64 # Must match backbone output channels
+  
+  # Required fields - must be overridden by each model config
+  num_classes: ??? # REQUIRED: Number of output classes for classification

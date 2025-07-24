@@ -1,14 +1,9 @@
-# ------------------------------------------------------------------------------
-# FedProx Algorithm Configuration
-#
-# FedProx adds a proximal term to stabilize training in heterogeneous environments
-# ------------------------------------------------------------------------------
+# FEDPROX ALGORITHM CONFIG:
 
 defaults:
-  - base
+  - base # Inherit base algorithm template
 
-# Dotpath to class implementation
 _target_: src.flora.algorithms.FedProx
 
-# Defaults
+# Algorithm-specific parameters
 mu: 0.01 # Proximal term coefficient - controls deviation penalty from global model

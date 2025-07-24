@@ -1,0 +1,16 @@
+# ------------------------------------------------------------------------------
+# TORCHDIST COMMUNICATOR CONFIG: PyTorch Distributed communication implementation
+#
+# References:
+# - https://pytorch.org/docs/stable/distributed.html
+# ------------------------------------------------------------------------------
+
+defaults:
+  - base # Inherit base communicator template
+
+_target_: src.flora.communicator.TorchDistCommunicator
+
+# Optional fields with defaults - can be overridden when using this config
+# master_addr: "127.0.0.1" # Master node address (uncomment to override default)
+# master_port: "29500" # Master node port (uncomment to override default)  
+# backend: "gloo" # Communication backend (uncomment to override default)

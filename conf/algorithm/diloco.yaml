@@ -1,15 +1,10 @@
-# ------------------------------------------------------------------------------
-# DiLoCo Algorithm Configuration
-#
-# Distributed Local SGD with compression - distributed optimizer on server
-# ------------------------------------------------------------------------------
+# DILOCO ALGORITHM CONFIG:
 
 defaults:
-  - base
+  - base # Inherit base algorithm template
 
-# Dotpath to class implementation
 _target_: src.flora.algorithms.DiLoCo
 
-# Defaults
+# Algorithm-specific parameters
 outer_lr: 0.7 # Learning rate for server-side outer optimizer
 outer_momentum: 0.9 # Momentum coefficient for server-side outer optimizer

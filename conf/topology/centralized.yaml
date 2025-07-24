@@ -1,7 +1,12 @@
 # ./conf/topology/centralized.yaml
 
+# CENTRALIZED TOPOLOGY CONFIG:
+
+defaults:
+  - base # Inherit base topology template
+
 _target_: src.flora.topology.CentralizedTopology
 
-num_clients: ???
-
-local_comm: ???
+# Required fields - must be overridden when using this config
+num_clients: ??? # REQUIRED: Number of client nodes in the federation
+local_comm: ??? # REQUIRED: Communication config for client-server connections

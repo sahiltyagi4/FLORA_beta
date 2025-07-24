@@ -1,12 +1,7 @@
-# ------------------------------------------------------------------------------
-# FedBN Algorithm Configuration
-#
-# FedBN - keeps batch normalization layers local, aggregates other parameters
-# ------------------------------------------------------------------------------
+# FEDBN ALGORITHM CONFIG:
 
 defaults:
-  - base
+  - base # Inherit base algorithm template
 
-# Dotpath to class implementation
 _target_: src.flora.algorithms.FedBN
-# FedBN has no additional parameters beyond the base algorithm
+# No additional parameters - FedBN uses only the base template fields

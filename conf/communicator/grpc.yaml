@@ -1,0 +1,14 @@
+# ------------------------------------------------------------------------------
+# GRPC COMMUNICATOR CONFIG: gRPC-based communication implementation
+#
+# References:
+# - https://grpc.io/docs/
+# ------------------------------------------------------------------------------
+
+defaults:
+  - base # Inherit base communicator template
+
+_target_: src.flora.communicator.GrpcCommunicator
+
+# Optional fields with defaults - can be overridden when using this config
+# (Add gRPC-specific configuration parameters as they are identified)

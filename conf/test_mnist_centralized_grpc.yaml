@@ -14,4 +14,5 @@ defaults:
 topology:
   num_clients: 2 # 2 clients + 1 server = 3 total nodes
   local_comm:
-    _target_: src.flora.communicator.GrpcCommunicator
+    defaults:
+      - /communicator/grpc # Use gRPC communicator template

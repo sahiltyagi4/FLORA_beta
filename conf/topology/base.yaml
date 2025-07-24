@@ -1,0 +1,14 @@
+# ------------------------------------------------------------------------------
+# TOPOLOGY BASE TEMPLATE: Common configuration template for all FLORA topologies
+#
+# COMPOSITION FLOW:
+# 1. Base template for all topology configurations
+# 2. Concrete topologies inherit and provide specific implementations
+#
+# INHERITANCE CHAIN: base.yaml → concrete topology configs
+# ------------------------------------------------------------------------------
+
+# Required fields - must be overridden by each topology config
+_target_: ??? # REQUIRED: Topology implementation class
+
+# Currently no common fields - may be added as topology implementations evolve

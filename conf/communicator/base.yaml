@@ -1,0 +1,16 @@
+# ------------------------------------------------------------------------------
+# COMMUNICATOR BASE TEMPLATE: Common configuration template for FLORA communicators
+#
+# COMPOSITION FLOW:
+# 1. This template provides structure for all communication configurations
+# 2. Concrete communicator configs inherit from this template via defaults list
+# 3. Each communicator defines its specific _target_ implementation class
+# 4. Communicator-specific parameters are added in concrete configs
+#
+# INHERITANCE CHAIN: base.yaml → concrete communicator configs (torchdist.yaml, etc.)
+# ------------------------------------------------------------------------------
+
+# Required fields - must be overridden by each communicator config
+_target_: ??? # REQUIRED: Communicator implementation class
+
+# Currently no common fields - may be added as communicator implementations evolve)

@@ -1,13 +1,18 @@
 # ------------------------------------------------------------------------------
-# Base Algorithm Configuration
+# ALGORITHM BASE TEMPLATE: Common configuration template for all FLORA algorithms
+#
+# COMPOSITION FLOW:
+# 1. Base template for all algorithm configurations
+# 2. Concrete algorithms inherit and provide specific implementations
+#
+# INHERITANCE CHAIN: base.yaml → concrete algorithm configs
 # ------------------------------------------------------------------------------
 
-# Required fields (must be overridden by each algorithm config)
-_target_: ???
+# Required fields - must be overridden by each algorithm config
+_target_: ??? # REQUIRED: Algorithm implementation class
+local_lr: ??? # REQUIRED: Local learning rate for client training
+max_epochs_per_round: ??? # REQUIRED: Number of local epochs per federated round
 
-local_lr: ???
-max_epochs_per_round: ???
-
-# Defaults
-agg_level: ROUND
-agg_freq: 1
+# Optional fields with defaults - can be overridden by inheriting configs
+agg_level: ROUND # When to perform aggregation (ROUND, EPOCH, BATCH)
+agg_freq: 1 # Frequency of aggregation (every N units of agg_level)

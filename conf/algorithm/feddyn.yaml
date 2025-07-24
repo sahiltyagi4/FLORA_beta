@@ -1,14 +1,9 @@
-# ------------------------------------------------------------------------------
-# FedDyn Algorithm Configuration
-#
-# FedDyn - dynamic regularization via correction vectors
-# ------------------------------------------------------------------------------
+# FEDDYN ALGORITHM CONFIG:
 
 defaults:
-  - base
+  - base # Inherit base algorithm template
 
-# Dotpath to class implementation
 _target_: src.flora.algorithms.FedDyn
 
-# Defaults
+# Algorithm-specific parameters
 alpha: 0.1 # Controls strength of correction vector regularization

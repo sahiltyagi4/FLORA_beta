@@ -1,7 +1,12 @@
 # ./conf/topology/multigroup.yaml
 
+# MULTIGROUP TOPOLOGY CONFIG:
+
+defaults:
+  - base # Inherit base topology template
+
 _target_: src.flora.topology.MultiGroupTopology
 
-groups: ??? # Must be overridden with list of CentralizedTopology configurations
-
-global_comm: ???
+# Required fields - must be overridden when using this config
+groups: ??? # REQUIRED: List of CentralizedTopology configurations for each group
+global_comm: ??? # REQUIRED: Communication config for inter-group/global connections

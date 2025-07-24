@@ -1,14 +1,9 @@
-# ------------------------------------------------------------------------------
-# FedNova Algorithm Configuration
-#
-# FedNova - normalizes updates by local steps to handle client heterogeneity
-# ------------------------------------------------------------------------------
+# FEDNOVA ALGORITHM CONFIG:
 
 defaults:
-  - base
+  - base # Inherit base algorithm template
 
-# Dotpath to class implementation
 _target_: src.flora.algorithms.FedNova
 
-# Defaults
+# Algorithm-specific parameters
 weight_decay: 0.0 # L2 regularization strength for local training

@@ -1,14 +1,9 @@
-# ------------------------------------------------------------------------------
-# FedMom Algorithm Configuration
-#
-# Federated Momentum - server-side momentum with velocity buffers
-# ------------------------------------------------------------------------------
+# FEDMOM ALGORITHM CONFIG:
 
 defaults:
-  - base
+  - base # Inherit base algorithm template
 
-# Dotpath to class implementation
 _target_: src.flora.algorithms.FedMom
 
-# Defaults
+# Algorithm-specific parameters
 momentum: 0.9 # Momentum coefficient for server-side velocity buffer

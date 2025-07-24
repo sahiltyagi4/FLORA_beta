@@ -1,16 +1,11 @@
-# ------------------------------------------------------------------------------
-# MOON Algorithm Configuration
-#
-# Model-Contrastive Federated Learning - contrastive learning against global model
-# ------------------------------------------------------------------------------
+# MOON ALGORITHM CONFIG:
 
 defaults:
-  - base
+  - base # Inherit base algorithm template
 
-# Dotpath to class implementation
 _target_: src.flora.algorithms.MOON
 
-# Defaults
+# Algorithm-specific parameters
 mu: 1.0 # Contrastive loss weight coefficient
 temperature: 0.5 # Temperature parameter for softmax in contrastive loss
 num_prev_models: 1 # Number of previous global models to maintain for contrastive learning
