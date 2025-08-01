@@ -1,0 +1,43 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# ResNet Model Family Test Configuration
+#
+# Test configuration demonstrating ResNet model variants.
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - test_mnist_fedavg_centralized_torchdist # Inherit base test config
+  - _self_
+
+# ─────────────────────────────────────────
+# ResNet Model Selection
+# ─────────────────────────────────────────
+
+# Active ResNet variant
+model:
+  _target_: torchvision.models.resnet50
+  num_classes: 10
+  progress: true
+  # weights: null  # Random initialization
+  # weights: "IMAGENET1K_V1"  # ImageNet pre-trained (original)
+  # weights: "IMAGENET1K_V2"  # ImageNet pre-trained (improved)
+# ─────────────────────────────────────────
+# Alternative ResNet Variants
+# ─────────────────────────────────────────
+
+# Lightweight ResNet
+# model:
+#   _target_: torchvision.models.resnet18
+#   num_classes: 10
+#   progress: true
+#   # weights: null
+#   # weights: "IMAGENET1K_V1"
+
+# Deeper ResNet
+# model:
+#   _target_: torchvision.models.resnet152
+#   num_classes: 10
+#   progress: true
+#   # weights: null
+#   # weights: "IMAGENET1K_V1"
+#   # weights: "IMAGENET1K_V2"
+

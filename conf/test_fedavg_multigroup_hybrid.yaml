@@ -1,0 +1,41 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# MNIST FedAvg MultiGroup Experiment with Mixed Communication
+#
+# Complete configuration for MNIST experiments with FedAvg algorithm.
+# Uses multigroup topology with 2 groups of 2 clients each (4 total clients).
+# Mixed communication: gRPC for global, TorchDist for local.
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - base_mnist_5K # Base framework configuration
+  - override topology: multigroup_mixed # MultiGroup FL topology with mixed communication
+  - override algorithm: fedavg # FedAvg algorithm
+  - _self_ # Override with local settings
+
+# ─────────────────────────────────────────
+# Component Overrides
+
+topology:
+  groups:
+    - _target_: src.flora.topology.CentralizedTopology
+      num_clients: 2 # Group 1: 2 clients
+      local_comm:
+        _target_: src.flora.communicator.TorchDistCommunicator
+        master_port: 29500
+        # timeout: 300
+    # ───────────────────────────
+    - _target_: src.flora.topology.CentralizedTopology
+      num_clients: 2 # Group 2: 2 clients
+      local_comm:
+        _target_: src.flora.communicator.TorchDistCommunicator
+        master_port: 29501
+        # timeout: 300
+
+algorithm:
+  local_lr: 0.01
+  max_epochs_per_round: 4
+
+# ─────────────────────────────────────────
+# Experiment Parameters
+
+global_rounds: 3

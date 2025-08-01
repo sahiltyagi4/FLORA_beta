@@ -1,0 +1,38 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Inception Model Family Test Configuration
+#
+# Test configuration demonstrating Inception model variants.
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - test_mnist_fedavg_centralized_torchdist # Inherit base test config
+  - _self_
+
+# ─────────────────────────────────────────
+# Inception Model Selection
+# ─────────────────────────────────────────
+
+# Active Inception variant
+model:
+  _target_: torchvision.models.inception_v3
+  num_classes: 10
+  progress: true
+  # weights: null  # Random initialization
+  # weights: "IMAGENET1K_V1"  # ImageNet pre-trained
+  # aux_logits: true  # Enable auxiliary classifiers (training only)
+  # transform_input: false  # Disable built-in preprocessing
+# ─────────────────────────────────────────
+# Alternative Inception Variants
+# ─────────────────────────────────────────
+
+# Original Inception
+# model:
+#   _target_: torchvision.models.googlenet
+#   num_classes: 10
+#   progress: true
+#   # weights: null
+#   # weights: "IMAGENET1K_V1"
+#   # aux_logits: true  # Enable auxiliary classifiers (training only)
+#   # transform_input: false  # Disable built-in preprocessing
+
+

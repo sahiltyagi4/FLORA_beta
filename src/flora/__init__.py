@@ -13,5 +13,5 @@
 # limitations under the License.
 
 from . import utils
-from .Engine import Engine
-from .Node import Node
+from .engine import Engine, EngineConfig, RayConfig
+from .node import Node, NodeConfig, RayActorConfig

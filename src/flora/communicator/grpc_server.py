@@ -19,27 +19,35 @@ from typing import Any, Dict
 import rich.repr
 import torch
 
-from . import grpc_communicator_pb2, grpc_communicator_pb2_grpc
-from .BaseCommunicator import ReductionType
+from . import grpc_pb2, grpc_pb2_grpc
+from .base import AggregationOp
 from .utils import get_msg_info, proto_to_tensordict, tensordict_to_proto
 
 
 @rich.repr.auto
-class CentralServerServicer(grpc_communicator_pb2_grpc.CentralServerServicer):
+class GrpcServer(grpc_pb2_grpc.GrpcServerServicer):
     """
-    gRPC servicer for centralized federated learning aggregation.
+    gRPC server implementation for federated learning communication coordination.
 
-    Manages broadcast state distribution and multi-session tensor aggregation
-    with automatic session management and client synchronization.
+    Coordinates broadcast and aggregation operations across multiple clients.
+    Handles session management, client synchronization, and tensor aggregation
+    with support for multiple concurrent FL rounds.
     """
 
     def __init__(
         self,
         world_size: int,
     ):
-        print(f"[COMM-INIT] gRPC Server | world_size={world_size}")
-        self.world_size = world_size
+        """
+        Initialize gRPC server for federated learning coordination.
 
+        Args:
+            world_size: Total number of FL participants (including server)
+        """
+        print(f"[COMM-INIT] gRPC Server | world_size={world_size}")
+
+        # Core configuration
+        self.world_size = world_size
         self.registered_clients = set()
         self.lock = threading.Lock()
 
@@ -60,14 +68,24 @@ class CentralServerServicer(grpc_communicator_pb2_grpc.CentralServerServicer):
         print(f"[COMM-READY] Server listening for {world_size} clients")
 
     def get_broadcast_state(self) -> Dict[str, torch.Tensor]:
-        """Get current broadcast state with tensor cloning."""
+        """
+        Get current broadcast state with thread-safe tensor cloning.
+
+        Returns:
+            Deep copy of broadcast tensors to prevent race conditions
+        """
         with self.lock:
             return {
                 key: tensor.clone() for key, tensor in self._broadcast_state.items()
             }
 
     def set_broadcast_state(self, tensordict: Dict[str, torch.Tensor]):
-        """Set broadcast state for client retrieval."""
+        """
+        Store broadcast state for distribution to clients.
+
+        Args:
+            tensordict: Tensors to broadcast (typically global model)
+        """
         with self.lock:
             self._broadcast_state = tensordict
         print(f"[COMM-BCAST] Stored | {get_msg_info(tensordict)}")
@@ -75,7 +93,16 @@ class CentralServerServicer(grpc_communicator_pb2_grpc.CentralServerServicer):
     def perform_aggregation_if_ready(
         self, session_state: Dict, current_session: int
     ) -> bool:
-        """Execute aggregation when all participants ready."""
+        """
+        Execute aggregation when all clients have submitted data.
+
+        Args:
+            session_state: Current aggregation session data
+            current_session: Session identifier
+
+        Returns:
+            True if aggregation was performed, False if still waiting
+        """
         submitted_count = len(session_state["data"])
 
         print(
@@ -100,8 +127,8 @@ class CentralServerServicer(grpc_communicator_pb2_grpc.CentralServerServicer):
                 # Initialize aggregated tensors for each key
                 aggregated_tensors = {}
 
-                if reduction_type == ReductionType.MAX.value:
-                    # MAX reduction: element-wise maximum across all clients
+                if reduction_type == AggregationOp.MAX.value:
+                    # MAX reduction: element-wise maximum
                     for key, tensor in first_data.items():
                         all_tensors = [
                             client_data[key]
@@ -112,10 +139,10 @@ class CentralServerServicer(grpc_communicator_pb2_grpc.CentralServerServicer):
                         )[0]
 
                 elif reduction_type in (
-                    ReductionType.SUM.value,
-                    ReductionType.MEAN.value,
+                    AggregationOp.SUM.value,
+                    AggregationOp.MEAN.value,
                 ):
-                    # SUM/MEAN reduction: sum all client contributions
+                    # SUM/MEAN reduction: sum all contributions
                     for key, tensor in first_data.items():
                         aggregated_tensors[key] = torch.zeros_like(tensor)
 
@@ -126,7 +153,7 @@ class CentralServerServicer(grpc_communicator_pb2_grpc.CentralServerServicer):
                                 aggregated_tensors[key] += tensor
 
                     # Convert sum to mean if needed
-                    if reduction_type == ReductionType.MEAN.value:
+                    if reduction_type == AggregationOp.MEAN.value:
                         for tensor in aggregated_tensors.values():
                             tensor /= self.world_size
 
@@ -143,32 +170,61 @@ class CentralServerServicer(grpc_communicator_pb2_grpc.CentralServerServicer):
         return False
 
     def GetBroadcastState(self, request, context):
-        """Send broadcast state to requesting client."""
+        """
+        gRPC endpoint: Send broadcast state to requesting client.
+
+        Args:
+            request: ClientInfo with client identifier
+            context: gRPC context (unused)
+
+        Returns:
+            OperationResponse with tensor data or not-ready status
+        """
         print(f"[BCAST-REQUEST] Client {request.client_id}")
 
         with self.lock:
             if self._broadcast_state:
                 proto_tensordict = tensordict_to_proto(self._broadcast_state)
-                return grpc_communicator_pb2.OperationResponse(
+                return grpc_pb2.OperationResponse(
                     tensor_dict=proto_tensordict, is_ready=True
                 )
             else:
-                return grpc_communicator_pb2.OperationResponse(is_ready=False)
+                return grpc_pb2.OperationResponse(is_ready=False)
 
     def _create_aggregation_result_response(self, session_id: int):
-        """Create response with aggregated tensors."""
+        """
+        Create gRPC response containing aggregated tensor results.
+
+        Args:
+            session_id: Aggregation session identifier
+
+        Returns:
+            OperationResponse with aggregated tensors or not-ready status
+        """
         if session_id in self.aggregation_state:
             session_state = self.aggregation_state[session_id]
             if session_state["result"] is not None:
                 aggregated_tensors = session_state["result"]
                 proto_tensordict = tensordict_to_proto(aggregated_tensors)
-                return grpc_communicator_pb2.OperationResponse(
+                return grpc_pb2.OperationResponse(
                     tensor_dict=proto_tensordict, is_ready=True
                 )
-        return grpc_communicator_pb2.OperationResponse(is_ready=False)
+        return grpc_pb2.OperationResponse(is_ready=False)
 
     def SubmitForAggregation(self, request, context):
-        """Receive and store client tensors for aggregation."""
+        """
+        gRPC endpoint: Receive client tensors for distributed aggregation.
+
+        Stores client contributions and triggers aggregation when all
+        clients have submitted their data.
+
+        Args:
+            request: AggregationRequest with client data and reduction type
+            context: gRPC context (unused)
+
+        Returns:
+            StatusResponse indicating success or failure
+        """
         with self.lock:
             client_id = request.client_id
             current_session = self.current_aggregation_session
@@ -198,14 +254,26 @@ class CentralServerServicer(grpc_communicator_pb2_grpc.CentralServerServicer):
                 )
 
                 self.perform_aggregation_if_ready(session_state, current_session)
-                return grpc_communicator_pb2.StatusResponse(success=True)
+                return grpc_pb2.StatusResponse(success=True)
 
             except Exception as e:
                 print(f"[COMM-ERROR] Submit | {e}")
-                return grpc_communicator_pb2.StatusResponse(success=False)
+                return grpc_pb2.StatusResponse(success=False)
 
     def GetAggregationResult(self, request, context):
-        """Send aggregation result to requesting client."""
+        """
+        gRPC endpoint: Send aggregation result to requesting client.
+
+        Waits for aggregation to complete if necessary, then returns
+        the aggregated tensors to the requesting client.
+
+        Args:
+            request: ClientInfo with client identifier
+            context: gRPC context (unused)
+
+        Returns:
+            OperationResponse with aggregated tensors or error status
+        """
         client_id = request.client_id
 
         with self.lock:
@@ -218,7 +286,7 @@ class CentralServerServicer(grpc_communicator_pb2_grpc.CentralServerServicer):
                 print(
                     f"[COMM-ERROR] GetResult | client={client_id} | no submission found"
                 )
-                return grpc_communicator_pb2.OperationResponse(is_ready=False)
+                return grpc_pb2.OperationResponse(is_ready=False)
 
         print(f"[AGG-REQUEST] Client {client_id} requesting aggregation result")
 
@@ -236,18 +304,27 @@ class CentralServerServicer(grpc_communicator_pb2_grpc.CentralServerServicer):
                 if session_state["result"] is not None:
                     print(f"[AGG-SEND] Sending aggregated model to client {client_id}")
                     return self._create_aggregation_result_response(target_session)
-            return grpc_communicator_pb2.OperationResponse(is_ready=False)
+            return grpc_pb2.OperationResponse(is_ready=False)
 
         except Exception as e:
             print(f"[COMM-ERROR] GetResult | {e}")
-            return grpc_communicator_pb2.OperationResponse(is_ready=False)
+            return grpc_pb2.OperationResponse(is_ready=False)
 
     def RegisterClient(self, request, context):
-        """Register client and track connection count."""
+        """
+        gRPC endpoint: Register client connection and track participant count.
+
+        Args:
+            request: ClientInfo with unique client identifier
+            context: gRPC context (unused)
+
+        Returns:
+            StatusResponse confirming successful registration
+        """
         with self.lock:
             self.registered_clients.add(request.client_id)
             total_clients = len(self.registered_clients)
             print(
                 f"[COMM-REGISTER] Client registered | {total_clients}/{self.world_size} total"
             )
-            return grpc_communicator_pb2.StatusResponse(success=True)
+            return grpc_pb2.StatusResponse(success=True)

@@ -1,0 +1,22 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Base DataModule Configuration
+#
+# Template for data module configurations with train/eval data loaders.
+# Works with src.flora.data.DataModule.
+# Compose this base in specific datamodule configs (like mnist.yaml) with "- base" in their defaults list.
+# Override defaults and add the dataset-specific parameters your chosen datasets need.
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - dataloader@train # Use dataloader config group and assign to 'train' field
+  - dataloader@eval # Use dataloader config group and assign to 'eval' field
+  - _self_
+
+_target_: src.flora.data.DataModule
+
+# Default data loader settings:
+train:
+  shuffle: true # Training data should be shuffled
+
+eval:
+  shuffle: false # Evaluation data should not be shuffled

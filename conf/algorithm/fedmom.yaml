@@ -1,14 +1,15 @@
-# ------------------------------------------------------------------------------
+# ══════════════════════════════════════════════════════════════════════════════
 # FedMom Algorithm Configuration
 #
-# Federated Momentum - server-side momentum with velocity buffers
-# ------------------------------------------------------------------------------
+# Federated learning with momentum.
+# Server-side momentum with velocity buffers.
+# ══════════════════════════════════════════════════════════════════════════════
 
 defaults:
-  - base
+    - base
+    - _self_
 
-# Dotpath to class implementation
-_target_: src.flora.algorithms.FedMom
+# NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+_target_: src.flora.algorithm.FedMom
 
-# Defaults
 momentum: 0.9 # Momentum coefficient for server-side velocity buffer

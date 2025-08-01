@@ -1,0 +1,55 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# CIFAR-10 Dataset Configuration
+#
+# Configures FLORA DataModule for CIFAR-10 object classification.
+# Uses torchvision dataset with standard normalization and data augmentation.
+#
+# Docs:
+# - https://pytorch.org/vision/stable/generated/torchvision.datasets.CIFAR10.html
+# - https://www.cs.toronto.edu/~kriz/cifar.html
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - base
+  - _self_
+
+# ─────────────────────────────────────────
+# Training Data
+# ─────────────────────────────────────────
+train:
+  dataset:
+    _target_: torchvision.datasets.CIFAR10
+    root: ${oc.env:FLORA_DATA_DIR,/tmp}/cifar10
+    train: true  # Use training set
+    # target_transform: null  # Optional transform for targets
+    download: true
+    transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+        - _target_: torchvision.transforms.ToTensor
+        - _target_: torchvision.transforms.RandomHorizontalFlip
+          p: 0.5
+        - _target_: torchvision.transforms.RandomCrop
+          size: 32
+          padding: 4
+        - _target_: torchvision.transforms.Normalize
+          mean: [0.4914, 0.4822, 0.4465]  # CIFAR-10 specific mean
+          std: [0.2470, 0.2435, 0.2616]   # CIFAR-10 specific std
+
+# ─────────────────────────────────────────
+# Evaluation Data
+# ─────────────────────────────────────────
+eval:
+  dataset:
+    _target_: torchvision.datasets.CIFAR10
+    root: ${oc.env:FLORA_DATA_DIR,/tmp}/cifar10
+    train: false  # Use test set
+    # target_transform: null  # Optional transform for targets
+    download: true
+    transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+        - _target_: torchvision.transforms.ToTensor
+        - _target_: torchvision.transforms.Normalize
+          mean: [0.4914, 0.4822, 0.4465]  # CIFAR-10 specific mean
+          std: [0.2470, 0.2435, 0.2616]   # CIFAR-10 specific std

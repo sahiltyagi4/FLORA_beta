@@ -1,17 +1,35 @@
-# ./conf/model/simple_cnn.yaml
+# ══════════════════════════════════════════════════════════════════════════════
+# Simple CNN Model Configuration
+#
+# Basic convolutional neural network for image classification.
+# Composable architecture with separate backbone and head components.
+# Configure input channels for your data and number of classes for your task.
+# ══════════════════════════════════════════════════════════════════════════════
 
-# Defines a generic, reusable CNN architecture blueprint.
+defaults:
+  - base
+  - _self_
 
-_target_: src.flora.models.ComposableModel
+# NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+_target_: src.flora.model.ComposableModel
 
+# ─────────────────────────────────────────
+# Feature Extraction Backbone
+# ─────────────────────────────────────────
 backbone:
-  _target_: src.flora.models.SimpleCNNBackbone
-  in_channels: ??? # Mandatory marker; composer must override this value
-  conv_channels: [32, 64]
-  kernel_sizes: 3
-  paddings: 1
+  # NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+  _target_: src.flora.model.SimpleCNNBackbone
+  in_channels: ??? # Input channels: 1 for grayscale, 3 for RGB
+  hidden_channels: [32, 64] # Channel progression through conv layers
+  out_channels: 128 # Final feature channels for head input
+  kernel_sizes: 3 # Convolution kernel size (uniform)
+  paddings: 1 # Padding to preserve spatial dimensions
 
+# ─────────────────────────────────────────
+# Classification Head
+# ─────────────────────────────────────────
 head:
-  _target_: src.flora.models.ClassificationHead
-  in_channels: 64
-  num_classes: ??? # Mandatory marker; composer must override this value
+  # NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+  _target_: src.flora.model.ClassificationHead
+  in_channels: 128 # Must match backbone output
+  num_classes: ??? # Number of target classes

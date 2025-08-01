@@ -1,0 +1,35 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# MobileNet Model Family Test Configuration
+#
+# Test configuration demonstrating MobileNet model variants.
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - test_mnist_fedavg_centralized_torchdist # Inherit base test config
+  - _self_
+
+# ─────────────────────────────────────────
+# MobileNet Model Selection
+# ─────────────────────────────────────────
+
+# Active MobileNet variant
+model:
+  _target_: torchvision.models.mobilenet_v3_large
+  num_classes: 10
+  progress: true
+  # weights: null  # Random initialization
+  # weights: "IMAGENET1K_V1"  # ImageNet pre-trained (original)
+  # weights: "IMAGENET1K_V2"  # ImageNet pre-trained (improved)
+# ─────────────────────────────────────────
+# Alternative MobileNet Variants
+# ─────────────────────────────────────────
+
+# Ultra-lightweight MobileNet
+# model:
+#   _target_: torchvision.models.mobilenet_v3_small
+#   num_classes: 10
+#   progress: true
+#   # weights: null
+#   # weights: "IMAGENET1K_V1"
+
+

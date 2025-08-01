@@ -1,0 +1,23 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# DataLoader Template
+#
+# Template for torch.utils.data.DataLoader configuration.
+# Used by DataModule configurations to ensure consistent structure.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+_target_: torch.utils.data.DataLoader
+
+# ─────────────────────────────────────────
+# Dataset Configuration
+# ─────────────────────────────────────────
+dataset: ??? # Required: Dataset implementation (e.g., torchvision.datasets.MNIST)
+
+# ─────────────────────────────────────────
+# DataLoader Parameters
+# ─────────────────────────────────────────
+batch_size: ??? # Required: Batch size for training/evaluation
+shuffle: ??? # Required: Whether to shuffle data (true for train, false for eval)
+num_workers: 2 # Number of worker processes for data loading
+pin_memory: true # Pin memory for faster GPU transfer
+persistent_workers: true # Keep workers alive between epochs

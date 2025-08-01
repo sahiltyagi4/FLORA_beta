@@ -1,0 +1,31 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Epoch-End Aggregation Configuration
+#
+# High-frequency aggregation pattern.
+# Aggregate model updates at the end of each epoch during local training.
+#
+# ══════════════════════════════════════════════════════════════════════════════
+
+# NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+_target_: src.flora.algorithm.AggregationTriggers
+
+# ─────────────────────────────────────────
+round_end: false # Don't wait for round end
+# round_end: true    # Aggregate after each round (standard FL)
+# round_end:         # Selective round aggregation
+#   every: 2         # Aggregate every 2nd round
+#   at: [0, 1, 5, 10] # Aggregate only after specific rounds
+
+# ─────────────────────────────────────────
+epoch_end: true # Aggregate after each epoch
+# epoch_end: false   # Don't aggregate after each epoch
+# epoch_end:         # Selective epoch aggregation
+#   every: 2         # Aggregate every 2nd epoch
+#   at: [1, 3, 5, 10] # Aggregate after specific epochs
+
+# ─────────────────────────────────────────
+batch_end: false # Don't aggregate after each batch
+# batch_end: true    # Aggregate after every batch (very frequent)
+# batch_end:         # Selective batch aggregation
+#   every: 100       # Aggregate every 100th batch
+#   at: [50, 100, 200] # Aggregate after specific batches

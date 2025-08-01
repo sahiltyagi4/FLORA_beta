@@ -1,0 +1,38 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST: Round-End Aggregation Schedule
+#
+# Tests standard round-level aggregation frequency (default FL pattern).
+# Inherits from centralized torchdist base and overrides only aggregation timing.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ─────────────────────────────────────────
+# METHOD 1: Override Config Group in Defaults List
+# ─────────────────────────────────────────
+
+defaults:
+  - test_mnist_fedavg_centralized_torchdist # Inherit base centralized config
+  - override algorithm/schedules/aggregation: round_end # Override aggregation schedule
+  - _self_
+#
+#
+# ─────────────────────────────────────────
+# METHOD 2: Direct Field Override (ALTERNATIVE)
+# ─────────────────────────────────────────
+#
+# algorithm:
+#   max_epochs_per_round: 2
+#   schedules:
+#     aggregation:
+#       round_end: true
+#       epoch_end: false
+#       batch_end: false
+#
+#
+# ─────────────────────────────────────────
+# Misc Overrides
+# ─────────────────────────────────────────
+
+global_rounds: 3
+
+algorithm:
+  max_epochs_per_round: 1

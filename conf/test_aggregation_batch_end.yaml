@@ -1,0 +1,42 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST: Batch-End Aggregation Schedule
+#
+# Tests high-frequency batch-level aggregation (very frequent sync).
+# Inherits from centralized torchdist base and overrides only aggregation timing.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ─────────────────────────────────────────
+# METHOD 1: Override Config Group in Defaults List
+# ─────────────────────────────────────────
+
+defaults:
+  - test_mnist_fedavg_centralized_torchdist # Inherit base centralized config
+  - override algorithm/schedules/aggregation: batch_end # Override aggregation schedule
+  - _self_
+#
+#
+# ─────────────────────────────────────────
+# METHOD 2: Direct Field Override (ALTERNATIVE)
+# ─────────────────────────────────────────
+#
+# algorithm:
+#   max_epochs_per_round: 1
+#   schedules:
+#     aggregation:
+#       round_end: false
+#       epoch_end: false
+#       batch_end: true
+#
+#
+# ─────────────────────────────────────────
+# Misc Overrides
+# ─────────────────────────────────────────
+
+global_rounds: 1
+
+algorithm:
+  max_epochs_per_round: 1
+
+datamodule:
+  train:
+    batch_size: 64 # Larger batches to reduce total batch count (limit sync frequency)

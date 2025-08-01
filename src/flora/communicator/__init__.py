@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .BaseCommunicator import BaseCommunicator, ReductionType
-from .TorchDistCommunicator import TorchDistCommunicator
-from .grpc_communicator import GrpcCommunicator
+from ._configs import *
+from .base import AggregationOp, BaseCommunicator
+from .grpc import GrpcCommunicator
+from .torchdist import TorchDistCommunicator

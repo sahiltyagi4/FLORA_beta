@@ -1,0 +1,55 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# CIFAR-100 Dataset Configuration
+#
+# Configures FLORA DataModule for CIFAR-100 fine-grained object classification.
+# Uses torchvision dataset with standard normalization and data augmentation.
+#
+# Docs:
+# - https://pytorch.org/vision/stable/generated/torchvision.datasets.CIFAR100.html
+# - https://www.cs.toronto.edu/~kriz/cifar.html
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - base
+  - _self_
+
+# ─────────────────────────────────────────
+# Training Data
+# ─────────────────────────────────────────
+train:
+  dataset:
+    _target_: torchvision.datasets.CIFAR100
+    root: ${oc.env:FLORA_DATA_DIR,/tmp}/cifar100
+    train: true  # Use training set
+    # target_transform: null  # Optional transform for targets
+    download: true
+    transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+        - _target_: torchvision.transforms.ToTensor
+        - _target_: torchvision.transforms.RandomHorizontalFlip
+          p: 0.5
+        - _target_: torchvision.transforms.RandomCrop
+          size: 32
+          padding: 4
+        - _target_: torchvision.transforms.Normalize
+          mean: [0.5071, 0.4865, 0.4409]  # CIFAR-100 specific mean
+          std: [0.2673, 0.2564, 0.2762]   # CIFAR-100 specific std
+
+# ─────────────────────────────────────────
+# Evaluation Data
+# ─────────────────────────────────────────
+eval:
+  dataset:
+    _target_: torchvision.datasets.CIFAR100
+    root: ${oc.env:FLORA_DATA_DIR,/tmp}/cifar100
+    train: false  # Use test set
+    # target_transform: null  # Optional transform for targets
+    download: true
+    transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+        - _target_: torchvision.transforms.ToTensor
+        - _target_: torchvision.transforms.Normalize
+          mean: [0.5071, 0.4865, 0.4409]  # CIFAR-100 specific mean
+          std: [0.2673, 0.2564, 0.2762]   # CIFAR-100 specific std

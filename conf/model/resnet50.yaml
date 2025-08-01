@@ -1,0 +1,64 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# ResNet-50 Model Configuration
+#
+# ResNet-50 deep residual network for image classification.
+# Uses torchvision's ResNet-50 implementation.
+# Uses bottleneck blocks.
+#
+# Reference: https://docs.pytorch.org/vision/stable/models/resnet.html
+# Paper: "Deep Residual Learning for Image Recognition" (He et al., 2016)
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - base
+  - _self_
+
+# NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+_target_: torchvision.models.resnet50
+
+# ─────────────────────────────────────────
+# Required Parameters
+# ─────────────────────────────────────────
+
+# NOTE: Required. Number of output classes for classification
+num_classes: ???
+
+# ─────────────────────────────────────────
+# Pre-trained Weights Configuration
+# ─────────────────────────────────────────
+
+# Pre-trained weights (None for random initialization)
+# Options: None, "IMAGENET1K_V1", "IMAGENET1K_V2", "DEFAULT"
+# weights: null  # Default: no pre-trained weights
+# weights: "IMAGENET1K_V1"  # ImageNet pre-trained weights (original)
+# weights: "IMAGENET1K_V2"  # ImageNet pre-trained weights (improved)
+# weights: "DEFAULT"  # Use default pre-trained weights
+
+# Show progress bar when downloading weights
+progress: true
+
+# ─────────────────────────────────────────
+# Architecture Parameters (Advanced)
+# ─────────────────────────────────────────
+
+# Initialize residual branch batch norm gamma to zero (improves training)
+# zero_init_residual: false  # Default: false
+
+# Number of groups for grouped convolution (for ResNeXt-style models)
+# groups: 1  # Default: 1 (standard ResNet)
+
+# Width of each group in grouped convolution 
+# width_per_group: 64  # Default: 64 (standard ResNet)
+
+# Replace 3x3 stride-2 conv with dilated conv (for dense prediction tasks)
+# replace_stride_with_dilation: null  # Default: null [false, false, false]
+# replace_stride_with_dilation: [false, false, false]  # No dilation
+# replace_stride_with_dilation: [false, true, true]   # Dilate last 2 stages
+
+# Custom normalization layer (BatchNorm2d is default)
+# norm_layer: null  # Default: BatchNorm2d
+# norm_layer:
+#   _target_: torch.nn.BatchNorm2d
+# norm_layer:
+#   _target_: torch.nn.GroupNorm
+#   num_groups: 32

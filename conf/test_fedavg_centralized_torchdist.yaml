@@ -1,0 +1,27 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# MNIST FedAvg Centralized Experiment with TorchDist Communication
+#
+# Complete configuration for MNIST experiments with FedAvg algorithm.
+# Uses centralized topology with 2 clients and TorchDist communication.
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - base_mnist_5K # Base framework configuration
+  - override topology: centralized_with_torchdist # Centralized FL topology with TorchDist
+  - override algorithm: fedavg # FedAvg algorithm
+  - _self_ # Override with local settings
+
+# ─────────────────────────────────────────
+# Component Overrides
+
+topology:
+  num_clients: 2
+
+algorithm:
+  local_lr: 0.01
+  max_epochs_per_round: 4
+
+# ─────────────────────────────────────────
+# Experiment Parameters
+
+global_rounds: 3

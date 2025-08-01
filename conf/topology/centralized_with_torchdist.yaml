@@ -1,0 +1,39 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Centralized Topology with TorchDist Communication
+#
+# Traditional server-client federated learning topology.
+# One aggregator node coordinates multiple client nodes using PyTorch distributed backend.
+#
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - base
+  - _self_
+
+# NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+_target_: src.flora.topology.CentralizedTopology
+
+# ─────────────────────────────────────────
+
+num_clients: ???
+
+local_comm:
+  # NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+  _target_: src.flora.communicator.TorchDistCommunicator
+  # backend: gloo            # CPU backend (default)
+  # backend: nccl            # GPU backend
+  # master_addr: "127.0.0.1" # Localhost for single-node setups
+  # master_port: 29500       # Default port
+  # timeout: 60              # Connection timeout
+#
+# ─────────────────────────────────────────
+# Optional Node-Specific Overrides
+# ─────────────────────────────────────────
+# Useful for forcing specific resource allocation (e.g., server CPU-only)
+# overrides:
+#   0: # Server: CPU-only aggregation
+#     device_hint: "cpu"
+#     ray_actor_options: {num_gpus: 0}
+#   1: # Client: Custom GPU allocation
+#     device_hint: "cuda:0"
+#     ray_actor_options: {num_gpus: 1.5}

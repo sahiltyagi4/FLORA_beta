@@ -18,26 +18,37 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from . import grpc_communicator_pb2
+from . import grpc_pb2
 
 
 def tensordict_to_proto(
     tensordict: Dict[str, torch.Tensor],
-) -> grpc_communicator_pb2.TensorDict:
-    """Convert tensor dictionary to protobuf format with exact reconstruction support"""
+) -> grpc_pb2.TensorDict:
+    """
+    Convert tensor dictionary to protobuf format for gRPC transmission.
+
+    Serializes PyTorch tensors to byte format with metadata for exact reconstruction.
+    Includes device information and data type preservation.
+
+    Args:
+        tensordict: Dictionary mapping parameter names to tensor values
+
+    Returns:
+        TensorDict protobuf message ready for gRPC transmission
+    """
     entries = []
 
     for key, tensor in tensordict.items():
         # Store original device before CPU conversion
         original_device = str(tensor.device)
 
-        # Convert to CPU for serialization
+        # Convert to CPU for serialization (required for protobuf)
         tensor_cpu = tensor.cpu()
 
-        # Serialize to bytes for exact reconstruction
+        # Serialize tensor data to bytes for transmission
         tensor_bytes = tensor_cpu.numpy().tobytes()
 
-        entry = grpc_communicator_pb2.TensorEntry(
+        entry = grpc_pb2.TensorEntry(
             key=key,
             data=tensor_bytes,
             shape=list(tensor_cpu.shape),
@@ -47,13 +58,27 @@ def tensordict_to_proto(
         )
         entries.append(entry)
 
-    return grpc_communicator_pb2.TensorDict(entries=entries)
+    return grpc_pb2.TensorDict(entries=entries)
 
 
 def proto_to_tensordict(
-    proto_tensordict: grpc_communicator_pb2.TensorDict,
+    proto_tensordict: grpc_pb2.TensorDict,
 ) -> Dict[str, torch.Tensor]:
-    """Convert protobuf tensor dictionary to native tensor dictionary with exact reconstruction"""
+    """
+    Convert protobuf tensor dictionary back to PyTorch tensors.
+
+    Deserializes byte data back to PyTorch tensors with original shapes,
+    data types, and device placement preserved.
+
+    Args:
+        proto_tensordict: TensorDict protobuf message from gRPC
+
+    Returns:
+        Dictionary mapping parameter names to reconstructed tensors
+
+    Raises:
+        ValueError: If data size mismatch or unsupported dtype
+    """
     tensordict = {}
     for entry in proto_tensordict.entries:
         # Validate data size
@@ -79,7 +104,7 @@ def proto_to_tensordict(
 
         numpy_dtype = dtype_mapping[entry.dtype]
 
-        # Reconstruct tensor from bytes
+        # Reconstruct tensor from serialized bytes
         numpy_array = np.frombuffer(entry.data, dtype=numpy_dtype)
         numpy_array = numpy_array.reshape(tuple(entry.shape))
 
@@ -95,6 +120,21 @@ def proto_to_tensordict(
 def get_msg_info(
     msg: Union[torch.Tensor, nn.Module, Dict[str, Any], Any],
 ) -> Dict[str, Any]:
+    """
+    Extract metadata from message for logging and debugging.
+
+    Provides structured information about tensors, models, or dictionaries
+    for communication operation logging and troubleshooting.
+
+    Args:
+        msg: Message to analyze (tensor, model, or dict)
+
+    Returns:
+        Dictionary with type, shape, device, and size information
+
+    Raises:
+        TypeError: If message type is not supported
+    """
     info: Dict[str, Any] = {
         "type": type(msg).__name__,
     }
@@ -127,7 +167,7 @@ def get_msg_info(
         else:
             info["keys"] = keys[:3] + ["...", f"({len(keys)} total)"]
 
-        # Check if it's a tensordict (all values are tensors)
+        # Add tensor-specific information if dictionary contains tensors
         tensor_values = [v for v in msg.values() if isinstance(v, torch.Tensor)]
         if tensor_values:
             info["tensors"] = len(tensor_values)

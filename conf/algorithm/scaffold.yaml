@@ -1,12 +1,13 @@
-# ------------------------------------------------------------------------------
+# ══════════════════════════════════════════════════════════════════════════════
 # SCAFFOLD Algorithm Configuration
 #
-# SCAFFOLD uses control variates to address client drift in federated learning
-# ------------------------------------------------------------------------------
+# SCAFFOLD uses control variates to address client drift in federated learning.
+# Maintains control variables to correct for heterogeneous data distributions.
+# ══════════════════════════════════════════════════════════════════════════════
 
 defaults:
-  - base
+    - base
+    - _self_
 
-# Dotpath to class implementation
-_target_: src.flora.algorithms.Scaffold
-# SCAFFOLD has no additional parameters beyond the base algorithm
+# NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+_target_: src.flora.algorithm.Scaffold

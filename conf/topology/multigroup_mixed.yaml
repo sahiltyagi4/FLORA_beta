@@ -1,0 +1,45 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# MultiGroup Topology with Mixed Communication
+#
+# Hierarchical federated learning topology structure.
+# Multiple groups each containing centralized sub-topologies.
+# Uses gRPC for global inter-group communication and TorchDist for local intra-group.
+# Each group has the same fields as a centralized topology.
+#
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - base
+  - _self_
+
+# NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+_target_: src.flora.topology.MultiGroupTopology
+
+# ─────────────────────────────────────────
+# Inter-Group Communication
+global_comm:
+  # NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+  _target_: src.flora.communicator.GrpcCommunicator
+  # master_addr: 127.0.0.1        # Global coordinator address
+  # master_port: 50051            # Global coordinator port
+  # aggregation_timeout: 600.0    # Wait time for all groups
+
+# ─────────────────────────────────────────
+# List of centralized topology configurations
+groups: ???
+# Example groups configuration:
+# groups:
+#   - num_clients: 3              # Group 1: 3 clients
+#     local_comm:
+#       _target_: src.flora.communicator.TorchDistCommunicator
+#       master_port: 29500
+#   # ───────────────────────────
+#   - num_clients: 2              # Group 2: 2 clients
+#     local_comm:
+#       _target_: src.flora.communicator.TorchDistCommunicator
+#       master_port: 29501
+#   # ───────────────────────────
+#   - num_clients: 4              # Group 3: 4 clients
+#     local_comm:
+#       _target_: src.flora.communicator.GrpcCommunicator
+#       master_port: 50052

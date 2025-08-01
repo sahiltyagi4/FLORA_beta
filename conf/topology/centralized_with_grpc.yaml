@@ -1,0 +1,39 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Centralized Topology with gRPC Communication
+#
+# Traditional server-client federated learning topology.
+# One aggregator node coordinates multiple client nodes using gRPC communication.
+#
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - base
+  - _self_
+
+# NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+_target_: src.flora.topology.CentralizedTopology
+
+# ─────────────────────────────────────────
+num_clients: ???
+
+# ─────────────────────────────────────────
+# Optional Node-Specific Overrides
+# ─────────────────────────────────────────
+# Useful for forcing specific resource allocation (e.g., server CPU-only)
+# overrides:
+#   0: # Server: CPU-only aggregation
+#     device_hint: "cpu"
+#     ray_actor_options: {num_gpus: 0}
+#   1: # Client: Custom GPU allocation
+#     device_hint: "cuda:0"
+#     ray_actor_options: {num_gpus: 1.5}
+
+# ─────────────────────────────────────────
+# Intra-Group Communication
+local_comm:
+  _target_: src.flora.communicator.GrpcCommunicator
+  # NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+  # master_addr: 127.0.0.1        # Server address
+  # master_port: 50051            # Server port
+  # max_workers: 10               # gRPC server thread pool size
+  # aggregation_timeout: 600.0    # Server wait time for all clients

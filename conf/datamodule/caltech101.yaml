@@ -1,0 +1,67 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Caltech-101 Dataset Configuration
+#
+# Configures FLORA DataModule for Caltech-101 object classification.
+# Uses torchvision dataset with appropriate transforms for variable-sized images.
+#
+# Docs:
+# - https://pytorch.org/vision/stable/generated/torchvision.datasets.Caltech101.html
+# - http://www.vision.caltech.edu/Image_Datasets/Caltech101/
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - base
+  - _self_
+
+# ─────────────────────────────────────────
+# Training Data
+# ─────────────────────────────────────────
+train:
+  dataset:
+    _target_: torchvision.datasets.Caltech101
+    root: ${oc.env:FLORA_DATA_DIR,/tmp}/caltech101
+    target_type: category # Use class labels (not annotation outlines)
+    # target_type: annotation  # Hand-generated outline points
+    # target_type: [category, annotation]  # List returns tuple with both types
+    # target_transform: null  # Optional transform for targets
+    download: true
+    transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+        - _target_: torchvision.transforms.RandomResizedCrop
+          size: 224 # preserves aspect ratio variations
+        - _target_: torchvision.transforms.RandomHorizontalFlip
+          p: 0.5
+        - _target_: torchvision.transforms.ColorJitter
+          brightness: 0.2
+          contrast: 0.2
+          saturation: 0.2
+          hue: 0.1
+        - _target_: torchvision.transforms.ToTensor
+        - _target_: torchvision.transforms.Normalize
+          mean: [0.485, 0.456, 0.406] # ImageNet pretrained model statistics
+          std: [0.229, 0.224, 0.225] # ImageNet pretrained model statistics
+
+# ─────────────────────────────────────────
+# Evaluation Data
+# ─────────────────────────────────────────
+eval:
+  dataset:
+    _target_: torchvision.datasets.Caltech101
+    root: ${oc.env:FLORA_DATA_DIR,/tmp}/caltech101
+    target_type: category # Use class labels (not annotation outlines)
+    # target_type: annotation  # Hand-generated outline points
+    # target_type: [category, annotation]  # List returns tuple with both types
+    # target_transform: null  # Optional transform for targets
+    download: true
+    transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+        - _target_: torchvision.transforms.Resize
+          size: 256 # Resize shorter edge to 256
+        - _target_: torchvision.transforms.CenterCrop
+          size: 224 # Center crop to 224x224 - standard ImageNet evaluation
+        - _target_: torchvision.transforms.ToTensor
+        - _target_: torchvision.transforms.Normalize
+          mean: [0.485, 0.456, 0.406] # ImageNet pretrained model statistics
+          std: [0.229, 0.224, 0.225] # ImageNet pretrained model statistics

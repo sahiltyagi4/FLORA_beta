@@ -1,0 +1,35 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Fashion-MNIST Test Configuration
+#
+# Test configuration for Fashion-MNIST dataset using FedAvg centralized setup.
+# Inherits from the base centralized configuration.
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - test_mnist_fedavg_centralized_torchdist # Inherit base centralized config
+  - override datamodule: fashion_mnist # Override with Fashion-MNIST dataset
+  - override model: simple_cnn
+  - _self_
+
+# ─────────────────────────────────────────
+
+global_rounds: 5
+
+algorithm:
+  local_lr: 0.001
+  max_epochs_per_round: 3
+
+# ─────────────────────────────────────────
+
+# Override model for Fashion-MNIST (grayscale, 10 classes)
+model:
+  backbone:
+    in_channels: 1 # Fashion-MNIST grayscale images
+  head:
+    num_classes: 10 # 10 clothing classes
+
+# datamodule:
+#   train:
+#     batch_size: 128
+#   eval:
+#     batch_size: 128

@@ -1,12 +1,13 @@
-# ------------------------------------------------------------------------------
+# ══════════════════════════════════════════════════════════════════════════════
 # FedBN Algorithm Configuration
 #
-# FedBN - keeps batch normalization layers local, aggregates other parameters
-# ------------------------------------------------------------------------------
+# Federated learning with Batch Normalization.
+# Keeps batch norm layers local, aggregates other parameters.
+# ══════════════════════════════════════════════════════════════════════════════
 
 defaults:
-  - base
+    - base
+    - _self_
 
-# Dotpath to class implementation
-_target_: src.flora.algorithms.FedBN
-# FedBN has no additional parameters beyond the base algorithm
+# NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+_target_: src.flora.algorithm.FedBN

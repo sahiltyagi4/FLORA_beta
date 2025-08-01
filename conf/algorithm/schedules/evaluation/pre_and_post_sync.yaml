@@ -1,0 +1,24 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Pre and Post-Sync Evaluation Configuration
+#
+# Evaluate at experiment endpoints and before and after each aggregation synchronization.
+#
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+    - base
+    - experiment_endpoints
+
+# ─────────────────────────────────────────
+pre_aggregation: true # Evaluate before aggregation
+# pre_aggregation: false   # Skip pre-aggregation evaluation
+# pre_aggregation:         # Selective pre-aggregation evaluation
+#   every: 2               # Before every 2nd aggregation
+#   at: [0, 1, 5, 10]      # Before specific aggregations
+
+# ─────────────────────────────────────────
+post_aggregation: true # Evaluate after aggregation (standard FL)
+# post_aggregation: false  # Disable post-aggregation evaluation
+# post_aggregation:        # Custom evaluation schedule
+#   every: 2               # After every 2nd aggregation
+#   at: [0, 1, 5, 10]      # After specific aggregations

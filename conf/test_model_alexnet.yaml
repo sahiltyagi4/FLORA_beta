@@ -1,0 +1,19 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# AlexNet Model Test Configuration
+#
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - test_mnist_fedavg_centralized_torchdist # Inherit base test config
+  - _self_
+
+# ─────────────────────────────────────────
+# AlexNet Model Configuration
+# ─────────────────────────────────────────
+
+model:
+  _target_: torchvision.models.alexnet
+  num_classes: 10
+  progress: true
+  # weights: null  # Random initialization
+  # weights: "IMAGENET1K_V1"  # ImageNet pre-trained

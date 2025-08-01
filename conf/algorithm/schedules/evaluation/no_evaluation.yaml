@@ -1,0 +1,35 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# No Evaluation Configuration
+#
+# Disables all evaluation for maximum training speed.
+# Use this when you only care about training performance, not model accuracy.
+#
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+    - base
+
+# NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+_target_: src.flora.algorithm.EvaluationTriggers
+
+# ─────────────────────────────────────────
+experiment_start: false # Skip baseline evaluation
+# experiment_start: true   # Enable initial evaluation
+
+# ─────────────────────────────────────────
+experiment_end: false # Skip final evaluation
+# experiment_end: true     # Enable final evaluation
+
+# ─────────────────────────────────────────
+pre_aggregation: false # Skip pre-sync evaluation
+# pre_aggregation: true    # Evaluate before every aggregation
+# pre_aggregation:         # Selective pre-aggregation evaluation
+#   every: 2               # Before every 2nd aggregation
+#   at: [0, 1, 5, 10]      # Before specific aggregations
+
+# ─────────────────────────────────────────
+post_aggregation: false # Skip post-sync evaluation
+# post_aggregation: true   # Evaluate after every aggregation
+# post_aggregation:        # Selective post-aggregation evaluation
+#   every: 2               # After every 2nd aggregation
+#   at: [0, 1, 5, 10]      # After specific aggregations

@@ -1,0 +1,75 @@
+// Copyright (c) 2025, Oak Ridge National Laboratory.  All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package src.flora.communicator;
+
+// Service definition for central aggregation server
+service GrpcServer {
+    // Get current broadcast state from server
+    rpc GetBroadcastState(ClientInfo) returns (OperationResponse);
+
+    // Submit tensors to server for aggregation
+    rpc SubmitForAggregation(AggregationRequest) returns (StatusResponse);
+
+    // Get aggregated tensor result from server
+    rpc GetAggregationResult(ClientInfo) returns (OperationResponse);
+
+    // Register client with server
+    rpc RegisterClient(ClientInfo) returns (StatusResponse);
+}
+
+// Generic empty request
+message EmptyRequest {
+}
+
+// Generic client identification request
+message ClientInfo {
+    string client_id = 1;
+}
+
+// Generic tensor submission request
+message AggregationRequest {
+    string client_id = 1;
+    TensorDict tensor_dict = 2;
+    string reduction_type = 3;  // "sum" or "mean"
+}
+
+// Generic tensor response (used for both broadcast and aggregation results)
+message OperationResponse {
+    TensorDict tensor_dict = 1;
+    bool is_ready = 2;
+}
+
+// Generic status response
+message StatusResponse {
+    bool success = 1;
+    // All logging fields removed - use server-side logging instead
+}
+
+// Container for multiple tensor entries
+message TensorDict {
+    repeated TensorEntry entries = 1;
+}
+
+// Single tensor with metadata for exact reconstruction
+message TensorEntry {
+    string key = 1;               // Tensor identifier (e.g., "layer.weight")
+    bytes data = 2;               // Serialized tensor data
+    repeated int32 shape = 3;     // Tensor dimensions
+    string dtype = 4;            // PyTorch dtype (e.g., "torch.float32")
+    string device = 5;           // Original tensor device (e.g., "cuda:0", "cpu")
+    int32 data_size = 6;         // Byte size for validation
+}

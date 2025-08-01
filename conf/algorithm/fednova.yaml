@@ -1,14 +1,15 @@
-# ------------------------------------------------------------------------------
+# ══════════════════════════════════════════════════════════════════════════════
 # FedNova Algorithm Configuration
 #
-# FedNova - normalizes updates by local steps to handle client heterogeneity
-# ------------------------------------------------------------------------------
+# Normalized federated averaging.
+# Normalizes updates by local steps to handle client heterogeneity.
+# ══════════════════════════════════════════════════════════════════════════════
 
 defaults:
-  - base
+    - base
+    - _self_
 
-# Dotpath to class implementation
-_target_: src.flora.algorithms.FedNova
+# NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+_target_: src.flora.algorithm.FedNova
 
-# Defaults
 weight_decay: 0.0 # L2 regularization strength for local training

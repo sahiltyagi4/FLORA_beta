@@ -1,0 +1,18 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Experiment Endpoints Evaluation Configuration
+#
+# Minimal evaluation for fast experiments.
+# Only evaluate at experiment start (baseline) and experiment end (final results).
+#
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+    - base
+
+# ─────────────────────────────────────────
+experiment_start: true # Evaluate at experiment start (baseline)
+# experiment_start: false  # Skip initial evaluation
+
+# ─────────────────────────────────────────
+experiment_end: true # Evaluate at experiment end (final result)
+# experiment_end: false    # Skip final evaluation

@@ -1,0 +1,32 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# CIFAR-10 Test Configuration
+#
+# Test configuration for CIFAR-10 dataset using FedAvg centralized setup.
+# Inherits from the base centralized configuration.
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - test_mnist_fedavg_centralized_torchdist # Inherit base centralized config
+  - override datamodule: cifar10 # Override with CIFAR-10 dataset
+  - override model: resnet18
+  - _self_
+
+# ─────────────────────────────────────────
+
+global_rounds: 5
+
+algorithm:
+  local_lr: 0.001
+  max_epochs_per_round: 3
+
+# ─────────────────────────────────────────
+
+# Override model for CIFAR-10 (10 classes)
+model:
+  num_classes: 10 # 10 object classes
+
+# datamodule:
+#   train:
+#     batch_size: 128
+#   eval:
+#     batch_size: 128

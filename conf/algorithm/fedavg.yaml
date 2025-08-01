@@ -1,12 +1,13 @@
-# ------------------------------------------------------------------------------
+# ══════════════════════════════════════════════════════════════════════════════
 # FedAvg Algorithm Configuration
 #
-# Federated Averaging - the baseline federated learning algorithm
-# ------------------------------------------------------------------------------
+# The original federated learning algorithm.
+# Simple average of all client model updates.
+# ══════════════════════════════════════════════════════════════════════════════
 
 defaults:
   - base
+  - _self_
 
-# Dotpath to class implementation
-_target_: src.flora.algorithms.FedAvg
-# FedAvg has no additional parameters beyond the base algorithm
+# NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+_target_: src.flora.algorithm.FedAvg

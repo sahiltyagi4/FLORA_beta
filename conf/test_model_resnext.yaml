@@ -1,0 +1,45 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# ResNeXt Model Family Test Configuration
+#
+# Test configuration demonstrating ResNeXt model variants.
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - test_mnist_fedavg_centralized_torchdist # Inherit base test config
+  - _self_
+
+# ─────────────────────────────────────────
+# ResNeXt Model Selection
+# ─────────────────────────────────────────
+
+# Active ResNeXt variant
+model:
+  _target_: torchvision.models.resnext50_32x4d
+  num_classes: 10
+  progress: true
+  # weights: null  # Random initialization
+  # weights: "IMAGENET1K_V1"  # ImageNet pre-trained (original)
+  # weights: "IMAGENET1K_V2"  # ImageNet pre-trained (improved)
+# ─────────────────────────────────────────
+# Alternative ResNeXt Variants
+# ─────────────────────────────────────────
+
+# Deep ResNeXt with wider groups
+# model:
+#   _target_: torchvision.models.resnext101_32x8d
+#   num_classes: 10
+#   progress: true
+#   # weights: null
+#   # weights: "IMAGENET1K_V1"
+#   # weights: "IMAGENET1K_V2"
+
+# Deep ResNeXt with more groups
+# model:
+#   _target_: torchvision.models.resnext101_64x4d
+#   num_classes: 10
+#   progress: true
+#   # weights: null
+#   # weights: "IMAGENET1K_V1"
+#   # weights: "IMAGENET1K_V2"
+
+

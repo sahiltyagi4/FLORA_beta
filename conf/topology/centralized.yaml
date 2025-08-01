@@ -1,7 +1,0 @@
-# ./conf/topology/centralized.yaml
-
-_target_: src.flora.topology.CentralizedTopology
-
-num_clients: ???
-
-local_comm: ???

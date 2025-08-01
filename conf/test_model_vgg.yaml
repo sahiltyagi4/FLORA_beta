@@ -1,0 +1,50 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# VGG Model Family Test Configuration
+#
+# Test configuration demonstrating VGG model variants.
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - test_mnist_fedavg_centralized_torchdist # Inherit base test config
+  - _self_
+
+# ─────────────────────────────────────────
+# VGG Model Selection
+# ─────────────────────────────────────────
+
+# Active VGG variant
+model:
+  _target_: torchvision.models.vgg16_bn
+  num_classes: 10
+  progress: true
+  # weights: null  # Random initialization
+  # weights: "IMAGENET1K_V1"  # ImageNet pre-trained
+# ─────────────────────────────────────────
+# Alternative VGG Variants
+# ─────────────────────────────────────────
+
+# Classic VGG-16
+# model:
+#   _target_: torchvision.models.vgg16
+#   num_classes: 10
+#   progress: true
+#   # weights: null
+#   # weights: "IMAGENET1K_V1"
+
+# Lightweight VGG-11
+# model:
+#   _target_: torchvision.models.vgg11
+#   num_classes: 10
+#   progress: true
+#   # weights: null
+#   # weights: "IMAGENET1K_V1"
+
+# Deep VGG-19
+# model:
+#   _target_: torchvision.models.vgg19
+#   num_classes: 10
+#   progress: true
+#   # weights: null
+#   # weights: "IMAGENET1K_V1"
+
+

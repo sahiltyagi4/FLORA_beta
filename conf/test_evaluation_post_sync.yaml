@@ -1,0 +1,28 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST: Post-Sync Evaluation Schedule
+#
+# Tests standard FL evaluation (post-aggregation only).
+# Inherits from centralized torchdist base and overrides only evaluation timing.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ─────────────────────────────────────────
+# METHOD 1: Override Config Group in Defaults List
+# ─────────────────────────────────────────
+
+defaults:
+  - test_mnist_fedavg_centralized_torchdist # Inherit base centralized config
+  - override algorithm/schedules/evaluation: post_sync # Override evaluation schedule
+  - _self_
+#
+#
+# ─────────────────────────────────────────
+# METHOD 2: Direct Field Override (ALTERNATIVE)
+# ─────────────────────────────────────────
+#
+# algorithm:
+#   schedules:
+#     evaluation:
+#       experiment_start: false
+#       experiment_end: false
+#       pre_aggregation: false
+#       post_aggregation: true

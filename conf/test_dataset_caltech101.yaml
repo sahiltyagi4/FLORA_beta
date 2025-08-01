@@ -1,0 +1,32 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Caltech-101 Test Configuration
+#
+# Test configuration for Caltech-101 dataset using FedAvg centralized setup.
+# Inherits from the base centralized configuration.
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - test_mnist_fedavg_centralized_torchdist # Inherit base centralized config
+  - override datamodule: caltech101 # Override with Caltech-101 dataset
+  - override model: resnet34
+  - _self_
+
+# ─────────────────────────────────────────
+
+global_rounds: 5
+
+algorithm:
+  local_lr: 0.001
+  max_epochs_per_round: 3
+
+# ─────────────────────────────────────────
+
+# Override model for Caltech-101 (102 classes)
+model:
+  num_classes: 102 # 101 object classes + 1 background class
+
+# datamodule:
+#   train:
+#     batch_size: 128
+#   eval:
+#     batch_size: 128

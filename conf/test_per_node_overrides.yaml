@@ -1,0 +1,27 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# MNIST FedAvg Centralized Experiment with TorchDist Communication
+#
+# Complete configuration for MNIST experiments with FedAvg algorithm.
+# Uses centralized topology with 2 clients and TorchDist communication.
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - test_mnist_fedavg_centralized_torchdist # Inherit base test config
+  - _self_
+
+# ─────────────────────────────────────────
+# Component Overrides
+
+topology:
+  num_clients: 2
+  node_overrides: # Override settings per-rank
+    # Rank 0 (server) - disable training by setting train dataloader to null
+    0:
+      id: ChangedServerId
+      datamodule:
+        train: null
+    # 1:
+    #   algorithm:
+    #     local_lr: 0.005  # Different learning rate for client 1
+    # 2:
+    #   device: "cpu"     # Force client 2 to use CPU

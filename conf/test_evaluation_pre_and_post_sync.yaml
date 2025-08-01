@@ -1,0 +1,28 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST: Pre and Post-Sync Evaluation Schedule
+#
+# Tests evaluation (start + pre-sync + post-sync + end).
+# Inherits from centralized torchdist base and overrides only evaluation timing.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ─────────────────────────────────────────
+# METHOD 1: Override Config Group in Defaults List
+# ─────────────────────────────────────────
+
+defaults:
+  - test_mnist_fedavg_centralized_torchdist # Inherit base centralized config
+  - override algorithm/schedules/evaluation: pre_and_post_sync # Override evaluation schedule
+  - _self_
+#
+#
+# ─────────────────────────────────────────
+# METHOD 2: Direct Field Override (ALTERNATIVE)
+# ─────────────────────────────────────────
+#
+# algorithm:
+#   schedules:
+#     evaluation:
+#       experiment_start: true
+#       experiment_end: true
+#       pre_aggregation: true
+#       post_aggregation: true

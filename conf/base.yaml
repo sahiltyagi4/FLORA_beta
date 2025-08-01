@@ -1,39 +1,90 @@
-# ------------------------------------------------------------------------------
-# FLORA Base Configuration
+# ══════════════════════════════════════════════════════════════════════════════
+# Base Configuration
 #
-# This is the foundational configuration that provides common defaults for all FLORA experiments.
-# Other configurations should extend this base and override specific sections as needed.
-#
-# Docs:
-# - https://hydra.cc/docs/patterns/extending_configs/
-# - https://hydra.cc/docs/patterns/configuring_experiments/
-# - https://hydra.cc/docs/advanced/defaults_list/
-# ------------------------------------------------------------------------------
+# Main configuration template with required components for federated learning experiments.
+# This is the primary config that composes all other components.
+# ══════════════════════════════════════════════════════════════════════════════
 
 defaults:
+  - topology: base
+  - algorithm: base
+  - model: base
+  - datamodule: base
   - _self_
 
-# ───────────── FL Algorithm Config
+# ─────────────────────────────────────────
+# Engine / Experiment Config
+# ─────────────────────────────────────────
 
-algo: ??? # Must be specified by extending configs
-
-# ───────────── Model Config
-
-model: ??? # Must be specified by extending configs
-
-# ───────────── Data Config
-
-data: ??? # Must be specified by extending configs
-
-# ───────────── Topology and Communication Config
-
-topology: ??? # Must be specified by extending configs
-
-# ───────────── FL Engine Config
-
+# Number of federated learning rounds (sets of epochs) to execute
 global_rounds: ???
 
-# ───────────── Hydra Config
+# Whether to allow overwriting existing experiment output directories
+overwrite: false
+
+# ─────────────────────────────────────────
+# Ray Cluster Configuration
+# ─────────────────────────────────────────
+# Controls distributed compute infrastructure for federated learning
+# Docs: https://docs.ray.io/en/latest/ray-core/api/doc/ray.init.html
+
+ray:
+  # ─────────────────────────────────────────
+  # Cluster Connection & Resource Allocation
+
+  # Cluster connection (null = auto-detect local cluster)
+  # Use "ray://host:port" for remote clusters, "local" to force local
+  address: null
+
+  # Resource allocation - CRITICAL for proper GPU/CPU distribution
+  # null = auto-detect based on hardware, explicit numbers override detection
+  num_cpus: null
+  num_gpus: null
+  resources: {} # Custom resources: {"accelerator_type": "V100", "high_memory": 2}
+
+  # GPU allocation: Automatic (shares GPUs when needed, 1 per actor otherwise)
+  # Override when needed: ray_actor_options.num_gpus in topology configs
+  # Debug: Check [GPU-AUTO] logs during startup
+
+  # ─────────────────────────────────────────
+  # Memory & Performance
+
+  # Object store memory for large model sharing (null = 30% of system memory)
+  object_store_memory: null
+
+  # ─────────────────────────────────────────
+  # Monitoring & Development
+
+  # Essential for FL: forward all distributed node logs to main process
+  log_to_driver: true
+
+  # Ray dashboard (null = auto-start if dependencies available)
+  include_dashboard: null
+  dashboard_host: "127.0.0.1" # Use "0.0.0.0" for external access
+  dashboard_port: null # null = auto-find port starting from 8265
+
+  # Development convenience - allow multiple ray.init() calls without error
+  ignore_reinit_error: true
+
+  # ─────────────────────────────────────────
+  # Advanced Configuration
+
+  # Experiment isolation (null = anonymous namespace)
+  namespace: null
+
+  # Runtime environment for distributed workers (empty = inherit from main process)
+  runtime_env: {} # Example: {"pip": ["torch==1.12.0"], "env_vars": {"CUDA_VISIBLE_DEVICES": "0,1"}}
+
+  # Commented advanced options (uncomment if needed):
+  # object_spilling_directory: null    # Directory for object spilling (null = system temp)
+  # labels: {}                         # [Experimental] Node labels: {"node_type": "gpu_worker"}
+  # configure_logging: true            # Whether Ray can configure logging
+  # logging_level: null                # Ray logging level (null = INFO)
+  # enable_resource_isolation: false   # Use cgroups for resource isolation
+
+# ─────────────────────────────────────────
+# Hydra Configuration
+# ─────────────────────────────────────────
 # Docs:
 # - https://hydra.cc/docs/configure_hydra/intro/
 # - https://hydra.cc/docs/configure_hydra/job/

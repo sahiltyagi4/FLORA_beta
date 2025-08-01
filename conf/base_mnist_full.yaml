@@ -1,0 +1,24 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# MNIST Sampled Test Configuration
+#
+# Fast test configuration using torch.utils.data.RandomSampler for flexible sampling.
+# Configurable via environment variables for different test sizes.
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - base # Base framework configuration
+  - override model: simple_cnn # Simple CNN for image classification
+  - override datamodule: mnist # MNIST dataset
+  - _self_ # Override with local settings
+
+model:
+  backbone:
+    in_channels: 1 # MNIST grayscale
+  head:
+    num_classes: 10 # MNIST digits
+
+datamodule:
+  train:
+    batch_size: 128
+  eval:
+    batch_size: 128

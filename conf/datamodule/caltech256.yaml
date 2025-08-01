@@ -1,0 +1,63 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Caltech-256 Dataset Configuration
+#
+# Configures FLORA DataModule for Caltech-256 object classification.
+# Uses torchvision dataset with appropriate transforms for variable-sized images.
+#
+# Docs:
+# - https://pytorch.org/vision/stable/generated/torchvision.datasets.Caltech256.html
+# - http://www.vision.caltech.edu/Image_Datasets/Caltech256/
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - base
+  - _self_
+
+# ─────────────────────────────────────────
+# Training Data
+# ─────────────────────────────────────────
+train:
+  dataset:
+    _target_: torchvision.datasets.Caltech256
+    root: ${oc.env:FLORA_DATA_DIR,/tmp}/caltech256
+    # target_transform: null  # Optional transform for targets
+    download: true
+    transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+        - _target_: torchvision.transforms.RandomResizedCrop
+          size: 224 # preserves aspect ratio variations
+        - _target_: torchvision.transforms.RandomHorizontalFlip
+          p: 0.5
+        - _target_: torchvision.transforms.RandomRotation
+          degrees: 15
+        - _target_: torchvision.transforms.ColorJitter
+          brightness: 0.2
+          contrast: 0.2
+          saturation: 0.2
+          hue: 0.1
+        - _target_: torchvision.transforms.ToTensor
+        - _target_: torchvision.transforms.Normalize
+          mean: [0.485, 0.456, 0.406] # ImageNet pretrained model statistics
+          std: [0.229, 0.224, 0.225] # ImageNet pretrained model statistics
+
+# ─────────────────────────────────────────
+# Evaluation Data
+# ─────────────────────────────────────────
+eval:
+  dataset:
+    _target_: torchvision.datasets.Caltech256
+    root: ${oc.env:FLORA_DATA_DIR,/tmp}/caltech256
+    # target_transform: null  # Optional transform for targets
+    download: true
+    transform:
+      _target_: torchvision.transforms.Compose
+      transforms:
+        - _target_: torchvision.transforms.Resize
+          size: 256 # Resize shorter edge to 256
+        - _target_: torchvision.transforms.CenterCrop
+          size: 224 # Center crop to 224x224 - standard ImageNet evaluation
+        - _target_: torchvision.transforms.ToTensor
+        - _target_: torchvision.transforms.Normalize
+          mean: [0.485, 0.456, 0.406] # ImageNet pretrained model statistics
+          std: [0.229, 0.224, 0.225] # ImageNet pretrained model statistics

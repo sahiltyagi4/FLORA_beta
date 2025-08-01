@@ -1,0 +1,32 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Caltech-256 Test Configuration
+#
+# Test configuration for Caltech-256 dataset using FedAvg centralized setup.
+# Inherits from the base centralized configuration.
+# ══════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - test_mnist_fedavg_centralized_torchdist # Inherit base centralized config
+  - override datamodule: caltech256 # Override with Caltech-256 dataset
+  - override model: resnet50
+  - _self_
+
+# ─────────────────────────────────────────
+
+global_rounds: 5
+
+algorithm:
+  local_lr: 0.001
+  max_epochs_per_round: 3
+
+# ─────────────────────────────────────────
+
+# Override model for Caltech-256 (257 classes)
+model:
+  num_classes: 257 # 256 object classes + 1 clutter class
+
+# datamodule:
+#   train:
+#     batch_size: 128
+#   eval:
+#     batch_size: 128

@@ -1,0 +1,21 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Base Evaluation Configuration
+#
+# Template for evaluation timing configurations.
+# Works with src.flora.algorithm.EvaluationTriggers.
+# Compose this base in specific evaluation configs (like pre_and_post_sync.yaml) with "- base" in their defaults list.
+# Override the evaluation timing parameters marked with ???.
+# ══════════════════════════════════════════════════════════════════════════════
+
+_target_: src.flora.algorithm.EvaluationTriggers
+
+# Required evaluation timing parameters - override in specific configs:
+experiment_start: ??? # Evaluate at experiment start (baseline)
+experiment_end: ??? # Evaluate at experiment end (final result)
+pre_aggregation: ??? # Evaluate before aggregation
+post_aggregation: ??? # Evaluate after aggregation (standard FL)
+
+# Examples for specific configs:
+# experiment_start: true/false
+# pre_aggregation: true/false or {every: 2} or {at: [0, 1, 5, 10]}
+# post_aggregation: true/false or {every: 2} or {at: [0, 1, 5, 10]}

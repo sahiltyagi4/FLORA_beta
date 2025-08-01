@@ -12,5 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .DummyDataset import DummyDataset
-from .DataModule import DataModule
+from ._configs import *
+from .datamodule import DataModule

@@ -1,0 +1,17 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Base Model Configuration
+#
+# Template for neural network model configurations.
+# Works with any class that subclasses torch.nn.Module.
+# Compose this base in specific model configs (like simple_cnn.yaml) with "- base" in their defaults list.
+# Override the _target_ and add the model-specific parameters your chosen model class needs.
+# ══════════════════════════════════════════════════════════════════════════════
+
+_target_: ??? # Model class (torch.nn.Linear, torchvision.models.ResNet, custom.MyModel, etc.)
+
+# Add model-specific parameters in concrete implementations:
+#   in_features, out_features (for torch.nn.Linear)
+#   num_classes (for torchvision models)  
+#   backbone, head (for composite models)
+#   in_channels, hidden_channels, kernel_size (for CNNs)
+#   vocab_size, hidden_size, num_layers (for transformers)

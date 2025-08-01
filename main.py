@@ -17,23 +17,23 @@ import time
 
 import hydra
 from hydra.utils import get_original_cwd
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 from rich.pretty import pprint
 
-from src.flora import Engine, utils
+from src.flora import Engine, EngineConfig, utils
 
 # =============================================================================
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="base")
-def main(cfg: DictConfig) -> None:
+def main(cfg: EngineConfig) -> None:
     import logging
 
     # utils.setup_rich_logging()
     # NOTE: migrate to logging soon (this is currently unused)
     logger = logging.getLogger(__name__)
 
-    utils.log_sep("FLORA Federated Learning Framework", color="blue")
+    utils.print_rule("FLORA Federated Learning Framework")
 
     print(f"Current working directory : {os.getcwd()}")
     print(f"Orig working directory    : {get_original_cwd()}")
@@ -54,7 +54,7 @@ def main(cfg: DictConfig) -> None:
     engine.setup()
 
     time.sleep(1)  # NOTE: useful for debugging for now
-    engine.start()
+    engine.run_experiment()
 
 
 if __name__ == "__main__":

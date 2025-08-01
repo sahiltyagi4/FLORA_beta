@@ -1,15 +1,16 @@
-# ------------------------------------------------------------------------------
+# ══════════════════════════════════════════════════════════════════════════════
 # Ditto Algorithm Configuration
 #
-# Ditto - personalized federated learning with fairness constraints
-# ------------------------------------------------------------------------------
+# Personalized federated learning with fairness constraints.
+# Balances global model performance with local personalization.
+# ══════════════════════════════════════════════════════════════════════════════
 
 defaults:
   - base
+  - _self_
 
-# Dotpath to class implementation
-_target_: src.flora.algorithms.Ditto
+# NOTE: Check constructor signature for complete parameter list, defaults, types, and docs.
+_target_: src.flora.algorithm.Ditto
 
-# Defaults
 global_lr: 0.01 # Learning rate for global model updates
 ditto_lambda: 0.1 # Regularization coefficient for personalization vs global trade-off

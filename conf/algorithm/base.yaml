@@ -1,13 +1,23 @@
-# ------------------------------------------------------------------------------
+# ══════════════════════════════════════════════════════════════════════════════
 # Base Algorithm Configuration
-# ------------------------------------------------------------------------------
+#
+# Template for federated learning algorithm configurations.
+# Works with any class that subclasses src.flora.algorithm.BaseAlgorithm.
+# Compose this base in specific algorithm configs (like fedavg.yaml) with "- base" in their defaults list.
+# Override the required parameters marked with ???.
+# ══════════════════════════════════════════════════════════════════════════════
 
-# Required fields (must be overridden by each algorithm config)
-_target_: ???
+defaults:
+  - schedules: base
 
-local_lr: ???
-max_epochs_per_round: ???
+_target_: ??? # Algorithm class (src.flora.algorithm.FedAvg, custom.MyAlgorithm, etc.)
 
-# Defaults
-agg_level: ROUND
-agg_freq: 1
+# Required algorithm parameters - override in specific configs:
+local_lr: ??? # Local learning rate for client training
+max_epochs_per_round: ??? # Maximum training epochs per round
+
+# Common additional parameters to add in specific algorithms:
+#   momentum, weight_decay (for optimizers)
+#   mu, lambda (for regularization-based algorithms)
+#   tau, alpha (for proximity-based algorithms)
+#   buffer_size, sample_rate (for memory-based algorithms)

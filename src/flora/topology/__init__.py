@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .BaseTopology import BaseTopology
-from .CentralizedTopology import CentralizedTopology
-from .MultiGroupTopology import MultiGroupTopology
+from ._configs import *
+from .base import BaseTopology
+from .centralized import CentralizedTopology
+from .multigroup import MultiGroupTopology
